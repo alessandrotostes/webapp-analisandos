@@ -1,4 +1,4 @@
-
+import { useState } from 'react';
 import type { Patient } from '../../types';
 import { Button } from '../ui/Button';
 
@@ -25,6 +25,12 @@ export function PatientsTab({
   onAddPatient,
   formatCurrency
 }: PatientsTabProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const displayedPatients = patients
+    .filter(p => p.status === patientStatusFilterTab)
+    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -34,66 +40,90 @@ export function PatientsTab({
         </Button>
       </div>
 
-      {/* Sub-abas de Status */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '10px', width: 'fit-content', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => setPatientStatusFilterTab('active')}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+        {/* Campo de Busca */}
+        <input
+          type="text"
+          placeholder="Buscar analisando por nome..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           style={{
-            padding: '0.45rem 1.25rem',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: patientStatusFilterTab === 'active' ? 'var(--accent-primary)' : 'transparent',
-            color: patientStatusFilterTab === 'active' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
+            padding: '0.6rem 1rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            width: '100%',
+            maxWidth: '400px',
+            fontSize: '0.9rem'
           }}
-        >
-          🟢 Ativos ({patients.filter(p => p.status === 'active').length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setPatientStatusFilterTab('paused')}
-          style={{
-            padding: '0.45rem 1.25rem',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: patientStatusFilterTab === 'paused' ? 'var(--accent-warning)' : 'transparent',
-            color: patientStatusFilterTab === 'paused' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
-          }}
-        >
-          🟡 Pausados ({patients.filter(p => p.status === 'paused').length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setPatientStatusFilterTab('ended')}
-          style={{
-            padding: '0.45rem 1.25rem',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: patientStatusFilterTab === 'ended' ? 'var(--accent-danger)' : 'transparent',
-            color: patientStatusFilterTab === 'ended' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
-          }}
-        >
-          🔴 Encerrados ({patients.filter(p => p.status === 'ended').length})
-        </button>
+        />
+
+        {/* Sub-abas de Status */}
+        <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem', borderRadius: '10px', width: 'fit-content', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setPatientStatusFilterTab('active')}
+            style={{
+              padding: '0.45rem 1.25rem',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              background: patientStatusFilterTab === 'active' ? 'var(--accent-primary)' : 'transparent',
+              color: patientStatusFilterTab === 'active' ? 'white' : 'var(--text-secondary)',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            🟢 Ativos ({patients.filter(p => p.status === 'active').length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setPatientStatusFilterTab('paused')}
+            style={{
+              padding: '0.45rem 1.25rem',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              background: patientStatusFilterTab === 'paused' ? 'var(--accent-warning)' : 'transparent',
+              color: patientStatusFilterTab === 'paused' ? 'white' : 'var(--text-secondary)',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            🟡 Pausados ({patients.filter(p => p.status === 'paused').length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setPatientStatusFilterTab('ended')}
+            style={{
+              padding: '0.45rem 1.25rem',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              background: patientStatusFilterTab === 'ended' ? 'var(--accent-danger)' : 'transparent',
+              color: patientStatusFilterTab === 'ended' ? 'white' : 'var(--text-secondary)',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            🔴 Encerrados ({patients.filter(p => p.status === 'ended').length})
+          </button>
+        </div>
       </div>
 
       {loadingPatients ? (
         <p style={{ color: 'var(--text-muted)' }}>Carregando dados dos analisandos...</p>
+      ) : displayedPatients.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          Nenhum analisando encontrado{searchQuery ? ` para "${searchQuery}"` : ''}.
+        </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem' }}>
-          {patients.filter(p => p.status === patientStatusFilterTab).map((p) => (
+          {displayedPatients.map((p) => (
             <div key={p.id} className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', gap: '0.5rem' }}>

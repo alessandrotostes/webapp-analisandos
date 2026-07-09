@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import { Card } from '../ui/Card';
-import { Table } from '../ui/Table';
 
 interface TransfersTabProps {
   selectedMonth: string;
@@ -12,273 +10,223 @@ interface TransfersTabProps {
   presencialTotalSessions: number;
   presencialTotalNet: number;
   presencialRows: any[];
-  numSupervisions: number;
-  setNumSupervisions: (num: number) => void;
-  costPerSupervision: number;
-  setSessionCostPerSupervision: (cost: number) => void;
-  supervisionTarget: number;
-  privateActivePatientsCount: number;
-  privateSessionsCount: number;
-  suggestedSavePerSession: number;
-  suggestedSavePerPatientMonthly: number;
-  suggestedSavePerSessionAssumingFour: number;
+  privateRows: any[];
+  privateTotalSessions: number;
+  privateTotalSupervision: number;
+  privateTotalNet: number;
+  numSupervisions?: number;
+  setNumSupervisions?: (num: number) => void;
+  costPerSupervision?: number;
+  setSessionCostPerSupervision?: (cost: number) => void;
+  supervisionTarget?: number;
+  privateActivePatientsCount?: number;
+  privateSessionsCount?: number;
+  suggestedSavePerSession?: number;
+  suggestedSavePerPatientMonthly?: number;
+  suggestedSavePerSessionAssumingFour?: number;
   formatCurrency: (val: number) => string;
+  onToggleRentCancelled?: (sessionId: string, currentVal: boolean) => void;
+  onToggleRentPaid?: (sessionId: string, currentVal: boolean) => void;
 }
 
 export function TransfersTab({
   selectedMonth,
   integrandoTotalRepasse,
   integrandoTotalSessions,
-  integrandoTotalGross,
   integrandoRows,
   presencialTotalRent,
   presencialTotalSessions,
-  presencialTotalNet,
   presencialRows,
-  numSupervisions,
-  setNumSupervisions,
-  costPerSupervision,
-  setSessionCostPerSupervision,
-  supervisionTarget,
-  privateActivePatientsCount,
-  privateSessionsCount,
-  suggestedSavePerSession,
-  suggestedSavePerPatientMonthly,
-  suggestedSavePerSessionAssumingFour,
-  formatCurrency
+  privateRows,
+  privateTotalSessions,
+  formatCurrency,
+  onToggleRentCancelled,
+  onToggleRentPaid
 }: TransfersTabProps) {
-  const [transfersSubTab, setTransfersSubTab] = useState<'integrando' | 'rent' | 'supervision'>('integrando');
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Cálculos de Repasses e Custo de Supervisão</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Cálculos de Repasses e Reservas</h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Detalhamento de comissões para projetos, aluguel de consultório e planejamento de supervisão (Mês Selecionado: {selectedMonth || 'Ano Inteiro'})
+            Visão geral de taxas do Integrando Ser, custos de consultório presencial e reserva para supervisão (Mês Vigente: {selectedMonth || 'Mês Atual'})
           </p>
         </div>
       </div>
 
-      {/* Sub-abas de Repasse */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={() => setTransfersSubTab('integrando')}
-          style={{
-            padding: '0.5rem 1.25rem',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: transfersSubTab === 'integrando' ? 'var(--accent-primary)' : 'transparent',
-            color: transfersSubTab === 'integrando' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
-          }}
-        >
-          🤝 Repasse Integrando Ser (25%)
-        </button>
-        <button
-          type="button"
-          onClick={() => setTransfersSubTab('rent')}
-          style={{
-            padding: '0.5rem 1.25rem',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: transfersSubTab === 'rent' ? 'var(--accent-primary)' : 'transparent',
-            color: transfersSubTab === 'rent' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
-          }}
-        >
-          🏢 Repasse Consultório (Presencial)
-        </button>
-        <button
-          type="button"
-          onClick={() => setTransfersSubTab('supervision')}
-          style={{
-            padding: '0.5rem 1.25rem',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            background: transfersSubTab === 'supervision' ? 'var(--accent-primary)' : 'transparent',
-            color: transfersSubTab === 'supervision' ? 'white' : 'var(--text-secondary)',
-            transition: 'var(--transition-smooth)'
-          }}
-        >
-          🧠 Planejamento de Supervisão (Particular)
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
+        
+        {/* CARD 1: INTEGRANDO SER (MÊS VIGENTE) */}
+        <Card title={`1. Repasse Integrando Ser (25%)`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+            <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Total Geral a Pagar</span>
+              <strong style={{ fontSize: '1.4rem', color: 'var(--accent-warning)' }}>{formatCurrency(integrandoTotalRepasse)}</strong>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem' }}>
+                Baseado em {integrandoTotalSessions} sessões realizadas no mês
+              </span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '420px', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingRight: '0.25rem' }}>
+              {integrandoRows.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem', textAlign: 'center', marginTop: '2rem' }}>Nenhum atendimento Integrando Ser no mês.</p>
+              ) : (
+                integrandoRows.map((r, idx) => (
+                  <div key={idx} style={{ padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-main)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', borderBottom: '1px dashed var(--border-color)', paddingBottom: '0.4rem' }}>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{r.name}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>Total: {formatCurrency(r.repasse)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {r.sessions.map((s: any, sIdx: number) => (
+                        <div key={sIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          <span>📅 {s.date.split('-').reverse().join('/')}</span>
+                          <span>Desconto: <strong style={{ color: 'var(--accent-warning)' }}>{formatCurrency(s.discount)}</strong> (25% de {formatCurrency(s.value)})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* CARD 2: REPASSE CONSULTÓRIO (PRESENCIAL) */}
+        <Card title={`2. Aluguel de Consultório (Presencial)`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Total do Mês (Aluguel)</span>
+              <strong style={{ fontSize: '1.4rem', color: 'var(--accent-danger)' }}>{formatCurrency(presencialTotalRent)}</strong>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem' }}>
+                Baseado em {presencialTotalSessions} sessões presenciais realizadas
+              </span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '420px', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingRight: '0.25rem' }}>
+              {presencialRows.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem', textAlign: 'center', marginTop: '2rem' }}>Nenhum atendimento presencial no mês.</p>
+              ) : (
+                presencialRows.map((r, idx) => (
+                  <div key={idx} style={{ padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-main)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', borderBottom: '1px dashed var(--border-color)', paddingBottom: '0.4rem' }}>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{r.name}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>Total: {formatCurrency(r.rent)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {r.sessions.map((s: any, sIdx: number) => (
+                        <div key={sIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          <span style={{ textDecoration: s.isRentCancelled ? 'line-through' : 'none' }}>
+                            📅 {s.date.split('-').reverse().join('/')}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {s.isRentCancelled ? (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Cancelado</span>
+                            ) : (
+                              <span>Aluguel: <strong style={{ color: 'var(--accent-danger)' }}>{formatCurrency(30.00)}</strong></span>
+                            )}
+                            {!s.isRentCancelled && (
+                              <button
+                                onClick={() => onToggleRentPaid?.(s.id, s.isRentPaid)}
+                                title={s.isRentPaid ? "Desmarcar como pago" : "Marcar como pago"}
+                                style={{
+                                  background: s.isRentPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                                  border: `1px solid ${s.isRentPaid ? 'var(--accent-success)' : 'var(--accent-warning)'}`,
+                                  color: s.isRentPaid ? 'var(--accent-success)' : 'var(--accent-warning)',
+                                  borderRadius: '4px',
+                                  padding: '0.15rem 0.4rem',
+                                  fontSize: '0.65rem',
+                                  cursor: 'pointer',
+                                  fontWeight: '600',
+                                  outline: 'none',
+                                  marginRight: '0.25rem'
+                                }}
+                              >
+                                {s.isRentPaid ? "PAGO" : "PAGAR"}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onToggleRentCancelled?.(s.id, s.isRentCancelled)}
+                              title={s.isRentCancelled ? "Ativar cobrança de aluguel" : "Cancelar aluguel desta sessão"}
+                              style={{
+                                background: s.isRentCancelled ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                border: `1px solid ${s.isRentCancelled ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                color: s.isRentCancelled ? 'var(--accent-success)' : 'var(--accent-danger)',
+                                borderRadius: '4px',
+                                padding: '0.15rem 0.4rem',
+                                fontSize: '0.65rem',
+                                cursor: 'pointer',
+                                fontWeight: '600',
+                                outline: 'none'
+                              }}
+                            >
+                              {s.isRentCancelled ? "Ativar" : "Cancelar"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* CARD 3: ANALISANDOS PARTICULARES (SUPERVISÃO) */}
+        <Card title={`3. Reserva para Supervisão (Particular Online)`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+            <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.2)', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Custo de 2 Supervisões (Meta)</span>
+              <strong style={{ fontSize: '1.4rem', color: 'var(--accent-primary)' }}>{formatCurrency(360.00)}</strong>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.2rem' }}>
+                Para atingir a meta mensal de supervisões
+              </span>
+            </div>
+
+            <div style={{ padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.25rem' }}>
+                <strong>Cálculo de Retirada Sugerida:</strong>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Por Paciente Ativo no Mês:</span>
+                <strong style={{ color: 'var(--accent-primary)' }}>
+                  {privateRows.length > 0 ? formatCurrency(360.00 / privateRows.length) : formatCurrency(360.00)}
+                </strong>
+              </div>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '-0.4rem', display: 'block' }}>
+                Baseado em {privateRows.length} pacientes particulares online ativos no mês
+              </span>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Por Sessão Realizada no Mês:</span>
+                <strong style={{ color: 'var(--accent-primary)' }}>
+                  {privateTotalSessions > 0 ? formatCurrency(360.00 / privateTotalSessions) : formatCurrency(360.00)}
+                </strong>
+              </div>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '-0.4rem', display: 'block' }}>
+                Baseado em {privateTotalSessions} sessões particulares online realizadas no mês
+              </span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: '180px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>Pacientes Considerados:</span>
+              {privateRows.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>Nenhum paciente particular online ativo no mês.</p>
+              ) : (
+                privateRows.map((r, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>{r.sessionsCount} sessões</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+
       </div>
-
-      {/* CONTEÚDO SUB-ABA: INTEGRANDO SER (25%) */}
-      {transfersSubTab === 'integrando' && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            <Card title="Repasse Total Integrando Ser">
-              <div className="card-value" style={{ color: 'var(--accent-warning)' }}>{formatCurrency(integrandoTotalRepasse)}</div>
-              <p className="card-subtitle">25% das sessões do mês selecionado</p>
-            </Card>
-            <Card title="Sessões Realizadas">
-              <div className="card-value">{integrandoTotalSessions}</div>
-              <p className="card-subtitle">Total de sessões acumuladas no mês</p>
-            </Card>
-            <Card title="Faturamento Bruto Integrando">
-              <div className="card-value" style={{ fontSize: '1.5rem', color: 'var(--text-secondary)' }}>{formatCurrency(integrandoTotalGross)}</div>
-              <p className="card-subtitle">Valor total recebido antes do repasse</p>
-            </Card>
-          </div>
-
-          <div className="card" style={{ padding: 0 }}>
-            <Table
-              columns={[
-                { header: 'Paciente', accessor: (r: any) => r.name },
-                { header: 'Sessões no Mês', accessor: (r: any) => `${r.sessionsCount} sessões`, align: 'center' },
-                { header: 'Valor por Sessão', accessor: (r: any) => formatCurrency(r.rate), align: 'right' },
-                { header: 'Faturamento Bruto', accessor: (r: any) => formatCurrency(r.gross), align: 'right' },
-                {
-                  header: 'Repasse Devido (25%)',
-                  accessor: (r: any) => (
-                    <strong style={{ color: 'var(--accent-warning)' }}>{formatCurrency(r.repasse)}</strong>
-                  ),
-                  align: 'right'
-                }
-              ]}
-              data={integrandoRows}
-              loading={false}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* CONTEÚDO SUB-ABA: REPASSE CONSULTÓRIO (PRESENCIAL) */}
-      {transfersSubTab === 'rent' && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            <Card title="Custo de Aluguel a Repassar">
-              <div className="card-value" style={{ color: 'var(--accent-danger)' }}>{formatCurrency(presencialTotalRent)}</div>
-              <p className="card-subtitle">R$ 30,00 por sessão do período</p>
-            </Card>
-            <Card title="Sessões Presenciais">
-              <div className="card-value">{presencialTotalSessions}</div>
-              <p className="card-subtitle">Sessões em consultório físico no mês</p>
-            </Card>
-            <Card title="Receita Líquida (Consultório)">
-              <div className="card-value" style={{ color: 'var(--accent-success)' }}>{formatCurrency(presencialTotalNet)}</div>
-              <p className="card-subtitle">Ganhos descontado o aluguel de sala</p>
-            </Card>
-          </div>
-
-          <div className="card" style={{ padding: 0 }}>
-            <Table
-              columns={[
-                { header: 'Paciente', accessor: (r: any) => r.name },
-                { header: 'Sessões no Mês', accessor: (r: any) => `${r.sessionsCount} sessões`, align: 'center' },
-                { header: 'Valor por Sessão (Bruto)', accessor: (r: any) => formatCurrency(r.rate), align: 'right' },
-                { 
-                  header: 'Valor Sessão Líquido (Sessão - R$30)', 
-                  accessor: (r: any) => (
-                    <strong style={{ color: 'var(--accent-success)' }}>{formatCurrency(r.netRate)}</strong>
-                  ),
-                  align: 'right' 
-                },
-                { header: 'Aluguel Devido (R$ 30 por Sessão)', accessor: (r: any) => formatCurrency(r.rent), align: 'right' },
-                { 
-                  header: 'Ganho Líquido Total', 
-                  accessor: (r: any) => (
-                    <strong style={{ color: 'var(--accent-success)' }}>{formatCurrency(r.netTotal)}</strong>
-                  ), 
-                  align: 'right' 
-                }
-              ]}
-              data={presencialRows}
-              loading={false}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* CONTEÚDO SUB-ABA: PLANEJAMENTO DE SUPERVISÃO */}
-      {transfersSubTab === 'supervision' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-          
-          {/* Parâmetros e Meta de Supervisão */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Custo de Supervisão Mensal</h3>
-            
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-              <div className="filter-group" style={{ flex: '1 1 120px' }}>
-                <label className="filter-label">Qtd. Supervisões / Mês</label>
-                <input
-                  type="number"
-                  className="filter-input"
-                  min="1"
-                  value={numSupervisions}
-                  onChange={(e) => setNumSupervisions(Number(e.target.value))}
-                  style={{ width: '100%', minWidth: 'auto' }}
-                />
-              </div>
-              <div className="filter-group" style={{ flex: '1 1 120px' }}>
-                <label className="filter-label">Custo / Supervisão (R$)</label>
-                <input
-                  type="number"
-                  className="filter-input"
-                  min="0"
-                  value={costPerSupervision}
-                  onChange={(e) => setSessionCostPerSupervision(Number(e.target.value))}
-                  style={{ width: '100%', minWidth: 'auto' }}
-                />
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-main)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color)', marginTop: '0.5rem' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Meta Financeira de Custo</span>
-              <strong style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>{formatCurrency(supervisionTarget)} / mês</strong>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
-                Meta para fazer {numSupervisions} supervisões clínicas de {formatCurrency(costPerSupervision)} cada.
-              </p>
-            </div>
-          </div>
-
-          {/* Planejamento de Rateio Recomendado */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Planejamento de Reserva (Pacientes Particulares)</h3>
-            
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <strong>Analisandos Particulares Ativos:</strong> {privateActivePatientsCount} analisandos
-              </div>
-              <div>
-                <strong>Sessões Particulares Realizadas no Mês:</strong> {privateSessionsCount} sessões
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ background: 'rgba(56, 189, 248, 0.05)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', textTransform: 'uppercase', display: 'block', fontWeight: 'bold' }}>Proposta por Sessão Executada</span>
-                  <strong style={{ fontSize: '1.1rem', color: 'var(--text-primary)' }}>Reservar {formatCurrency(suggestedSavePerSession)}</strong>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.2rem' }}>
-                    De cada sessão de paciente particular realizada neste mês para cobrir a meta de {formatCurrency(supervisionTarget)}.
-                  </span>
-                </div>
-
-                <div style={{ background: 'rgba(16, 185, 129, 0.05)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-success)', textTransform: 'uppercase', display: 'block', fontWeight: 'bold' }}>Proposta Fixa por Paciente Ativo</span>
-                  <strong style={{ fontSize: '1.1rem', color: 'var(--text-primary)' }}>Reservar {formatCurrency(suggestedSavePerPatientMonthly)} / mês</strong>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.2rem' }}>
-                    De cada um dos {privateActivePatientsCount} pacientes particulares neste mês. (Aproximadamente <strong>{formatCurrency(suggestedSavePerSessionAssumingFour)}</strong> por sessão individual, assumindo 4 sessões/mês).
-                  </span>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-      )}
     </div>
   );
 }

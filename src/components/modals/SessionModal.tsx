@@ -65,15 +65,26 @@ export function SessionModal({
             <label className="filter-label">Modalidade de Atendimento</label>
             <select
               className="filter-select"
-              value={sessionForm.modality || 'particular'}
+              value={sessionForm.modality === 'presencial' || sessionForm.modality === 'online' ? sessionForm.modality : 'online'}
               onChange={(e) => setSessionForm(prev => ({ ...prev, modality: e.target.value }))}
+            >
+              <option value="online">Online</option>
+              <option value="presencial">Presencial</option>
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label className="filter-label">Tipo de Paciente</label>
+            <select
+              className="filter-select"
+              value={sessionForm.patientType || 'particular'}
+              onChange={(e) => setSessionForm(prev => ({ ...prev, patientType: e.target.value }))}
             >
               <option value="particular">Particular</option>
               <option value="social_clinic">Clínica Social</option>
-              <option value="zenklub">Zenklub</option>
+              <option value="training_student">Aluno</option>
               <option value="integrando_ser">Integrando Ser</option>
-              <option value="online">Online</option>
-              <option value="presencial">Presencial</option>
+              <option value="zenklub">Zenklub</option>
             </select>
           </div>
 
@@ -94,11 +105,19 @@ export function SessionModal({
               <label className="filter-label">Status do Pagamento</label>
               <select
                 className="filter-select"
-                value={sessionForm.isPaid ? 'pago' : 'não_pago'}
-                onChange={(e) => setSessionForm(prev => ({ ...prev, isPaid: e.target.value === 'pago' }))}
+                value={sessionForm.isPackage ? 'pacote' : (sessionForm.isPaid ? 'pago' : 'não_pago')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSessionForm(prev => ({
+                    ...prev,
+                    isPaid: val === 'pago',
+                    isPackage: val === 'pacote'
+                  }));
+                }}
               >
                 <option value="não_pago">❌ Não Pago / Pendente</option>
                 <option value="pago">✅ Pago</option>
+                <option value="pacote">📦 Pacote</option>
               </select>
             </div>
           </div>

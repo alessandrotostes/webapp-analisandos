@@ -1,5 +1,4 @@
-import React from 'react';
-import type { Invoice, Session } from '../../types';
+import type { Invoice, Session, Patient } from '../../types';
 import { Button } from '../ui/Button';
 import { Table } from '../ui/Table';
 
@@ -10,6 +9,7 @@ interface InvoicesTabProps {
   totalMetrics: { faturado: number; recebido: number; pendente: number };
   invoices: Invoice[];
   sessions: Session[];
+  patients: Patient[];
   loadingInvoices: boolean;
   handleQuickPayInvoice: (invoice: Invoice) => void;
   handleDeleteInvoice: (id: string) => void;
@@ -26,6 +26,7 @@ export function InvoicesTab({
   totalMetrics,
   invoices,
   sessions,
+  patients,
   loadingInvoices,
   handleQuickPayInvoice,
   handleDeleteInvoice,
@@ -102,10 +103,49 @@ export function InvoicesTab({
             {
               header: 'Pendente',
               accessor: (inv: Invoice) => {
-                if (inv.pendingValue === 0) {
+                // Calcular data da segunda e sexta-feira da semana atual
+                const today = new Date();
+                const day = today.getDay();
+                const monday = new Date(today);
+                const diffToMonday = day === 0 ? -6 : 1 - day;
+                monday.setDate(today.getDate() + diffToMonday);
+                monday.setHours(0, 0, 0, 0);
+
+                const friday = new Date(monday);
+                friday.setDate(monday.getDate() + 4);
+                friday.setHours(23, 59, 59, 999);
+
+                const formatDate = (d: Date) => {
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const dayStr = String(d.getDate()).padStart(2, '0');
+                  return `${y}-${m}-${dayStr}`;
+                };
+
+                const monStr = formatDate(monday);
+                const friStr = formatDate(friday);
+
+                // Filtrar sessões não pagas e não canceladas da semana do paciente
+                const patientWeekSessions = sessions.filter(s => 
+                  s.patientName === inv.patientName &&
+                  s.date >= monStr &&
+                  s.date <= friStr &&
+                  s.isPaid !== true &&
+                  !s.isPackage &&
+                  !(s.isCancelled && !s.isCharged)
+                );
+
+                const weekPendingValue = patientWeekSessions.reduce((sum, s) => {
+                  const p = patients.find(pat => pat.name === s.patientName);
+                  const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 150);
+                  const val = s.sessionValue !== undefined ? s.sessionValue : rate;
+                  return sum + val;
+                }, 0);
+
+                if (weekPendingValue === 0) {
                   return <span className="badge badge-paid">Quitado</span>;
                 }
-                return <span className="badge badge-pending">{formatCurrency(inv.pendingValue)}</span>;
+                return <span className="badge badge-pending">{formatCurrency(weekPendingValue)}</span>;
               },
               align: 'center'
             },
@@ -113,17 +153,23 @@ export function InvoicesTab({
               header: 'Ações',
               accessor: (inv: Invoice) => (
                 <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                  {inv.pendingValue > 0 && (
-                    <Button variant="success" onClick={() => handleQuickPayInvoice(inv)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                      Quitar
-                    </Button>
+                  {inv.patientName === 'ZENKLUB' ? (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Consolidado</span>
+                  ) : (
+                    <>
+                      {Math.max(0, inv.value - inv.paidValue) > 0 && (
+                        <Button variant="success" onClick={() => handleQuickPayInvoice(inv)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
+                          Quitar
+                        </Button>
+                      )}
+                      <Button variant="secondary" onClick={() => handleOpenInvoiceModal(inv)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
+                        Editar
+                      </Button>
+                      <Button variant="danger" onClick={() => inv.id && handleDeleteInvoice(inv.id)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
+                        Excluir
+                      </Button>
+                    </>
                   )}
-                  <Button variant="secondary" onClick={() => handleOpenInvoiceModal(inv)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                    Editar
-                  </Button>
-                  <Button variant="danger" onClick={() => inv.id && handleDeleteInvoice(inv.id)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                    Excluir
-                  </Button>
                 </div>
               ),
               align: 'center'
@@ -151,7 +197,7 @@ export function InvoicesTab({
           <div className="card" style={{ padding: 0 }}>
             <Table
               columns={[
-                { header: 'Data', accessor: (s: Session) => s.date },
+                { header: 'Data', accessor: (s: Session) => s.date ? s.date.split('-').reverse().join('/') : '' },
                 { header: 'Modalidade', accessor: (s: Session) => <span style={{ textTransform: 'uppercase', fontSize: '0.75rem' }}>{s.modality.replace('_', ' ')}</span> },
                 { header: 'Info Pagamento / Valor', accessor: (s: Session) => s.paymentInfo || '---' },
                 { header: 'Duração', accessor: (s: Session) => `${s.duration.toFixed(1)}h`, align: 'center' }

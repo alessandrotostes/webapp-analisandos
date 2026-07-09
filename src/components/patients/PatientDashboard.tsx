@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import type { Patient, Session, RateReadjustment } from '../../types';
 import { Button } from '../ui/Button';
+import { Edit2 } from 'lucide-react';
 
 interface PatientDashboardProps {
   selectedPatient: Patient;
@@ -13,20 +14,37 @@ interface PatientDashboardProps {
   setGeneralPhoneText: (txt: string) => void;
   generalEmailText: string;
   setGeneralEmailText: (txt: string) => void;
+  generalDefaultRate: number;
+  setGeneralDefaultRate: (rate: number) => void;
   generalNotesText: string;
   setGeneralNotesText: (txt: string) => void;
   handleSaveGeneralPatientDetails: () => void;
   savingNotes: boolean;
-  selectedSessionForNotes: Session | null;
-  setSelectedSessionForNotes: (s: Session | null) => void;
-  sessionNotesText: string;
-  setSessionNotesText: (txt: string) => void;
-  handleSaveSessionNotes: () => void;
   handleOpenSessionModal: (session?: Session) => void;
   handleDeleteSession: (id: string) => void;
   formatCurrency: (val: number) => string;
   handleUpdatePatientReadjustments: (readjustments: RateReadjustment[]) => Promise<void>;
   handleToggleSessionPaymentStatus: (session: Session) => Promise<void>;
+  handleToggleSessionCancellation: (session: Session) => Promise<void>;
+  handleToggleSessionCharge: (session: Session) => Promise<void>;
+  handleUpdateSessionValue: (sessionId: string, value: number) => Promise<void>;
+  handleUpdateSessionNotes: (sessionId: string, notes: string) => Promise<void>;
+  handleUpdateSessionDate: (sessionId: string, date: string) => Promise<void>;
+  handleUpdateSessionModality: (sessionId: string, modality: string) => Promise<void>;
+  handleUpdateSessionPatientType: (sessionId: string, patientType: string) => Promise<void>;
+  generalOriginText: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student';
+  setGeneralOriginText: (origin: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student') => void;
+  showConfirm: (
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    options?: {
+      title?: string;
+      confirmText?: string;
+      cancelText?: string;
+      isAlert?: boolean;
+      onCancel?: () => void;
+    }
+  ) => void;
 }
 
 export function PatientDashboard({
@@ -39,23 +57,49 @@ export function PatientDashboard({
   setGeneralPhoneText,
   generalEmailText,
   setGeneralEmailText,
+  generalDefaultRate,
+  setGeneralDefaultRate,
   generalNotesText,
   setGeneralNotesText,
   handleSaveGeneralPatientDetails,
   savingNotes,
-  selectedSessionForNotes,
-  setSelectedSessionForNotes,
-  sessionNotesText,
-  setSessionNotesText,
-  handleSaveSessionNotes,
   handleOpenSessionModal,
   handleDeleteSession,
   formatCurrency,
   handleUpdatePatientReadjustments,
-  handleToggleSessionPaymentStatus
+  handleToggleSessionPaymentStatus,
+  handleToggleSessionCancellation,
+  handleToggleSessionCharge,
+  handleUpdateSessionValue,
+  handleUpdateSessionNotes,
+  handleUpdateSessionDate,
+  handleUpdateSessionModality,
+  handleUpdateSessionPatientType,
+  generalOriginText,
+  setGeneralOriginText,
+  showConfirm
 }: PatientDashboardProps) {
   const [newReadjustmentDate, setNewReadjustmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [newReadjustmentValue, setNewReadjustmentValue] = useState<number | string>('');
+  const [editingSessionValueId, setEditingSessionValueId] = useState<string | null>(null);
+  const [tempSessionValue, setTempSessionValue] = useState<string>('');
+  const [editingSessionDateId, setEditingSessionDateId] = useState<string | null>(null);
+  const [tempSessionDate, setTempSessionDate] = useState<string>('');
+  const [editingSessionModalityId, setEditingSessionModalityId] = useState<string | null>(null);
+  const [tempSessionModality, setTempSessionModality] = useState<string>('');
+  const [editingSessionPatientTypeId, setEditingSessionPatientTypeId] = useState<string | null>(null);
+  const [tempSessionPatientType, setTempSessionPatientType] = useState<string>('');
+  const [expandedNotesSessionId, setExpandedNotesSessionId] = useState<string | null>(null);
+  const [tempNotesText, setTempNotesText] = useState<string>('');
+
+  const getTodayStr = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const todayStr = getTodayStr();
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -71,10 +115,23 @@ export function PatientDashboard({
   );
   const lastReadjustment = sortedReadjustments[0] || null;
 
+  const getUpcomingSessionsOfCurrentMonth = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    const currentMonthPrefix = `${yyyy}-${mm}`;
+
+    return patientDashboardSessions
+      .filter(s => s.date.startsWith(currentMonthPrefix) && s.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  };
+
   const handleAddReadjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newReadjustmentDate || !newReadjustmentValue) {
-      alert("Por favor, preencha a data e o valor do reajuste.");
+      showConfirm("Por favor, preencha a data e o valor do reajuste.", () => {}, { isAlert: true, title: 'Aviso' });
       return;
     }
 
@@ -89,20 +146,575 @@ export function PatientDashboard({
     try {
       await handleUpdatePatientReadjustments(updatedList);
       setNewReadjustmentValue('');
-      alert("Reajuste adicionado com sucesso!");
+      showConfirm("Reajuste adicionado com sucesso!", () => {}, { isAlert: true, title: 'Sucesso' });
     } catch (err) {
       // erro tratado no pai
     }
   };
 
-  const handleDeleteReadjustment = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este registro de reajuste?")) return;
-    const updatedList = (selectedPatient.rateReadjustments || []).filter(r => r.id !== id);
-    try {
-      await handleUpdatePatientReadjustments(updatedList);
-    } catch (err) {
-      // erro tratado no pai
-    }
+  const handleDeleteReadjustment = (id: string) => {
+    showConfirm(
+      "Deseja realmente excluir este registro de reajuste?",
+      async () => {
+        const updatedList = (selectedPatient.rateReadjustments || []).filter(r => r.id !== id);
+        try {
+          await handleUpdatePatientReadjustments(updatedList);
+        } catch (err) {
+          // erro tratado no pai
+        }
+      }
+    );
+  };
+
+  const renderSessionList = (sessionsList: Session[]) => {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, maxHeight: '480px', paddingRight: '0.25rem' }}>
+        {sessionsList.map((s) => {
+          return (
+            <div
+              key={s.id}
+              style={{
+                padding: '1rem',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-main)',
+                transition: 'var(--transition-smooth)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', alignItems: 'center' }}>
+                {editingSessionDateId === s.id ? (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="date"
+                      value={tempSessionDate}
+                      onChange={(e) => setTempSessionDate(e.target.value)}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.1rem 0.25rem',
+                        border: '1px solid var(--accent-primary)',
+                        borderRadius: '4px',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-primary)',
+                        outline: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (s.id) {
+                          await handleUpdateSessionDate(s.id, tempSessionDate);
+                          setEditingSessionDateId(null);
+                        }
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                      title="Salvar"
+                    >
+                      ✔️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSessionDateId(null)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                      title="Cancelar"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{formatDate(s.date)}</strong>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (s.id) {
+                          setEditingSessionDateId(s.id);
+                          setTempSessionDate(s.date);
+                        }
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        padding: '0.1rem',
+                        opacity: 0.6,
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                      title="Editar Data"
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  </span>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
+                  {editingSessionModalityId === s.id ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={tempSessionModality}
+                        onChange={(e) => setTempSessionModality(e.target.value)}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '0.1rem 0.25rem',
+                          border: '1px solid var(--accent-primary)',
+                          borderRadius: '4px',
+                          background: 'var(--bg-main)',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                          fontFamily: 'inherit'
+                        }}
+                      >
+                        <option value="online">Online</option>
+                        <option value="presencial">Presencial</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (s.id) {
+                            await handleUpdateSessionModality(s.id, tempSessionModality);
+                            setEditingSessionModalityId(null);
+                          }
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                        title="Salvar"
+                      >
+                        ✔️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSessionModalityId(null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                        title="Cancelar"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                        {s.modality.replace('_', ' ')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (s.id) {
+                            setEditingSessionModalityId(s.id);
+                            setTempSessionModality(s.modality === 'presencial' || s.modality === 'online' ? s.modality : 'online');
+                          }
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '0.7rem',
+                          padding: '0.1rem',
+                          opacity: 0.6,
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                        title="Editar Formato"
+                      >
+                        <Edit2 size={10} />
+                      </button>
+                    </span>
+                  )}
+
+                  {editingSessionPatientTypeId === s.id ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={tempSessionPatientType}
+                        onChange={(e) => setTempSessionPatientType(e.target.value)}
+                        style={{
+                          fontSize: '0.7rem',
+                          padding: '0.1rem 0.25rem',
+                          border: '1px solid var(--accent-primary)',
+                          borderRadius: '4px',
+                          background: 'var(--bg-main)',
+                          color: 'var(--text-primary)',
+                          outline: 'none',
+                          fontFamily: 'inherit'
+                        }}
+                      >
+                        <option value="particular">Particular</option>
+                        <option value="social_clinic">Clínica Social</option>
+                        <option value="training_student">Aluno</option>
+                        <option value="integrando_ser">Integrando Ser</option>
+                        <option value="zenklub">Zenklub</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (s.id) {
+                            await handleUpdateSessionPatientType(s.id, tempSessionPatientType);
+                            setEditingSessionPatientTypeId(null);
+                          }
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                        title="Salvar"
+                      >
+                        ✔️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSessionPatientTypeId(null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                        title="Cancelar"
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                        {((s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(s.modality) ? s.modality : selectedPatient.origin)) || '').replace('_', ' ').replace('training student', 'Aluno').replace('social clinic', 'Clínica Social')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (s.id) {
+                            setEditingSessionPatientTypeId(s.id);
+                            const curType = s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(s.modality) ? s.modality : selectedPatient.origin) || 'particular';
+                            setTempSessionPatientType(curType);
+                          }
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '0.7rem',
+                          padding: '0.1rem',
+                          opacity: 0.6,
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                        title="Editar Tipo de Paciente"
+                      >
+                        <Edit2 size={10} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.duration.toFixed(1)}h de sessão</span>
+                  {s.paymentInfo && isNaN(Number(s.paymentInfo.trim())) && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      Obs: {s.paymentInfo}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (s.id) {
+                        if (expandedNotesSessionId === s.id) {
+                          setExpandedNotesSessionId(null);
+                        } else {
+                          setExpandedNotesSessionId(s.id);
+                          setTempNotesText(s.notes || '');
+                        }
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      color: s.notes ? 'var(--accent-success)' : 'var(--text-muted)',
+                      fontWeight: s.notes ? '600' : 'normal',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.2rem'
+                    }}
+                    title={s.notes ? `Evolução:\n${s.notes}\n\n(Clique para editar)` : "Clique para adicionar notas de evolução"}
+                  >
+                    {s.notes ? '📝 Com evolução' : '➕ Add Evolução'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenSessionModal(s);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-primary)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      padding: '0.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '4px',
+                      transition: 'var(--transition-smooth)'
+                    }}
+                    title="Editar Atendimento Completo"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (s.id) handleDeleteSession(s.id);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-danger)',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      padding: '0.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '4px',
+                      transition: 'var(--transition-smooth)'
+                    }}
+                    title="Excluir Sessão"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+
+              {/* Linha: Controles de Cancelamento, Cobrança e Pagamento */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem' }}>
+                
+                {/* Cancelar / Status da Sessão */}
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleSessionCancellation(s);
+                    }}
+                    style={{
+                      background: s.isCancelled ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                      border: `1px solid ${s.isCancelled ? 'var(--accent-danger)' : 'var(--border-color)'}`,
+                      color: s.isCancelled ? 'var(--accent-danger)' : 'var(--text-secondary)',
+                      padding: '0.2rem 0.4rem',
+                      borderRadius: '6px',
+                      fontSize: '0.7rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'var(--transition-smooth)'
+                    }}
+                    title="Clique para alternar entre Normal e Cancelada"
+                  >
+                    {s.isCancelled ? '❌ Cancelada' : '🗓️ Atendida'}
+                  </button>
+
+                  {/* Se cancelada, exibe opção de Cobrada / Não Cobrada */}
+                  {s.isCancelled && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleSessionCharge(s);
+                      }}
+                      style={{
+                        background: s.isCharged ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                        border: `1px solid ${s.isCharged ? '#f59e0b' : 'var(--border-color)'}`,
+                        color: s.isCharged ? '#f59e0b' : 'var(--text-muted)',
+                        padding: '0.2rem 0.4rem',
+                        borderRadius: '6px',
+                        fontSize: '0.7rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      title="Clique para alternar cobrança da sessão cancelada"
+                    >
+                      {s.isCharged ? '💰 Cobrada' : '💸 Não Cobrada'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Valor e Pagamento */}
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                    Valor:{' '}
+                    {s.isCancelled && !s.isCharged ? (
+                      <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(0)}</strong>
+                    ) : editingSessionValueId === s.id ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={tempSessionValue}
+                          onChange={(e) => setTempSessionValue(e.target.value)}
+                          style={{
+                            width: '65px',
+                            fontSize: '0.75rem',
+                            padding: '0.1rem 0.25rem',
+                            border: '1px solid var(--accent-primary)',
+                            borderRadius: '4px',
+                            background: 'var(--bg-main)',
+                            color: 'var(--text-primary)',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (s.id) {
+                              await handleUpdateSessionValue(s.id, Number(tempSessionValue));
+                              setEditingSessionValueId(null);
+                            }
+                          }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                          title="Salvar"
+                        >
+                          ✔️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingSessionValueId(null)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', padding: '0.1rem' }}
+                          title="Cancelar"
+                        >
+                          ❌
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {formatCurrency(s.sessionValue !== undefined ? s.sessionValue : selectedPatient.defaultRate)}
+                        </strong>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (s.id) {
+                              setEditingSessionValueId(s.id);
+                              setTempSessionValue((s.sessionValue !== undefined ? s.sessionValue : selectedPatient.defaultRate).toString());
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem',
+                            padding: '0.1rem',
+                            opacity: 0.6,
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
+                          title="Editar Valor"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </span>
+                    )}
+                  </span>
+                  
+                  {/* Apenas exibe status de pagamento se for Atendida OR se for Cancelada + Cobrada */}
+                  {(!s.isCancelled || s.isCharged) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleSessionPaymentStatus(s);
+                      }}
+                      style={{
+                        background: s.isPackage ? 'rgba(139, 92, 246, 0.12)' : (s.isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                        border: `1px solid ${s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)')}`,
+                        color: s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)'),
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      title="Clique para alternar: Não Pago → Pago → Pacote"
+                    >
+                      {s.isPackage ? '📦 Pacote' : (s.isPaid ? '🟢 Pago' : '🔴 Não Pago')}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Gaveta de Notas/Evolução expandida */}
+              {expandedNotesSessionId === s.id && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>
+                    Evolução Clínica / Anotações da Sessão
+                  </label>
+                  <textarea
+                    value={tempNotesText}
+                    onChange={(e) => setTempNotesText(e.target.value)}
+                    placeholder="Digite aqui as observações ou evolução clínica deste atendimento..."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      fontSize: '0.8rem',
+                      padding: '0.4rem 0.5rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setExpandedNotesSessionId(null)}
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                    >
+                      Fechar
+                    </Button>
+                    <Button
+                      variant="success"
+                      onClick={async () => {
+                        if (s.id) {
+                          await handleUpdateSessionNotes(s.id, tempNotesText);
+                          setExpandedNotesSessionId(null);
+                        }
+                      }}
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                    >
+                      💾 Salvar Notas
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -129,10 +741,10 @@ export function PatientDashboard({
             {/* Indicadores de Horas e Sessões Acumuladas */}
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                ⏱️ <strong>Horas Feitas:</strong> {patientDashboardSessions.reduce((sum, s) => sum + (s.duration || 1.0), 0).toFixed(1)}h
+                ⏱️ <strong>Horas Feitas:</strong> {patientDashboardSessions.reduce((sum, s) => sum + ((s.isCancelled || s.date > todayStr) ? 0 : (s.duration || 1.0)), 0).toFixed(1)}h
               </span>
               <span style={{ background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                📅 <strong>Total de Sessões:</strong> {patientDashboardSessions.length}
+                📅 <strong>Total de Sessões:</strong> {patientDashboardSessions.filter(s => !s.isCancelled && s.date <= todayStr).length}
               </span>
             </div>
           </div>
@@ -160,7 +772,6 @@ export function PatientDashboard({
 
       {/* Seção Superior: Histórico de Sessões & Evolução do Atendimento (O mais importante primeiro) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        
         {/* Card: Histórico de Sessões */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
@@ -175,67 +786,39 @@ export function PatientDashboard({
           ) : patientDashboardSessions.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>Nenhum atendimento registrado para este paciente.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, maxHeight: '480px', paddingRight: '0.25rem' }}>
-              {patientDashboardSessions.map((s) => {
-                const isSelected = selectedSessionForNotes?.id === s.id;
-                return (
+            renderSessionList(patientDashboardSessions)
+          )}
+        </div>
+
+        {/* Card: Próximas Sessões do Mês Vigente */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Próximas Sessões deste Mês</h3>
+          
+          {loadingDashboardSessions ? (
+            <p style={{ color: 'var(--text-muted)' }}>Carregando sessões...</p>
+          ) : (() => {
+            const upcomingSessions = getUpcomingSessionsOfCurrentMonth();
+            return upcomingSessions.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>Nenhuma sessão agendada para o restante do mês vigente.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, maxHeight: '480px', paddingRight: '0.25rem' }}>
+                {upcomingSessions.map((s) => (
                   <div
                     key={s.id}
-                    onClick={() => {
-                      setSelectedSessionForNotes(s);
-                      setSessionNotesText(s.notes || '');
-                    }}
                     style={{
-                      cursor: 'pointer',
                       padding: '1rem',
                       borderRadius: '12px',
-                      border: isSelected ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                      background: isSelected ? 'rgba(56, 189, 248, 0.05)' : 'var(--bg-main)',
-                      boxShadow: isSelected ? 'var(--shadow-glow)' : 'none',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
                       transition: 'var(--transition-smooth)'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                      <strong style={{ fontSize: '0.9rem', color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{s.date}</strong>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>{s.modality.replace('_', ' ')}</span>
+                      <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{formatDate(s.date)}</strong>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                        {s.modality.replace('_', ' ')}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.duration.toFixed(1)}h de sessão</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {s.notes ? (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-success)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', fontWeight: '500' }}>
-                            📝 Com evolução
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Sem anotações</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (s.id) handleDeleteSession(s.id);
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--accent-danger)',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem',
-                            padding: '0.25rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '4px',
-                            transition: 'var(--transition-smooth)'
-                          }}
-                          title="Excluir Sessão"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Linha adicionada: valor cobrado e status de pagamento (manual e clicável) */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem' }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                         Valor: <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(s.sessionValue !== undefined ? s.sessionValue : selectedPatient.defaultRate)}</strong>
@@ -247,9 +830,9 @@ export function PatientDashboard({
                           handleToggleSessionPaymentStatus(s);
                         }}
                         style={{
-                          background: s.isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                          border: `1px solid ${s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)'}`,
-                          color: s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)',
+                          background: s.isPackage ? 'rgba(139, 92, 246, 0.12)' : (s.isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                          border: `1px solid ${s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)')}`,
+                          color: s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)'),
                           padding: '0.25rem 0.5rem',
                           borderRadius: '6px',
                           fontSize: '0.75rem',
@@ -260,57 +843,16 @@ export function PatientDashboard({
                           gap: '0.25rem',
                           transition: 'var(--transition-smooth)'
                         }}
-                        title="Clique para alternar o status de pagamento"
+                        title="Clique para alternar: Não Pago → Pago → Pacote"
                       >
-                        {s.isPaid ? '🟢 Pago' : '🔴 Não Pago'}
+                        {s.isPackage ? '📦 Pacote' : (s.isPaid ? '🟢 Pago' : '🔴 Não Pago')}
                       </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Card: Evolução do Atendimento */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Evolução do Atendimento</h3>
-          
-          {selectedSessionForNotes ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1 }}>
-              <div style={{ background: 'var(--bg-main)', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Atendimento Selecionado</span>
-                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{selectedSessionForNotes.date}</strong>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.25rem' }}>
-                  Modalidade: <span style={{ textTransform: 'uppercase' }}>{selectedSessionForNotes.modality.replace('_', ' ')}</span> | Valor: {formatCurrency(selectedSessionForNotes.sessionValue !== undefined ? selectedSessionForNotes.sessionValue : selectedPatient.defaultRate)} | Pagamento: <strong style={{ color: selectedSessionForNotes.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)' }}>{selectedSessionForNotes.isPaid ? 'Pago' : 'Não Pago'}</strong>
-                </span>
+                ))}
               </div>
-
-              <div className="filter-group" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <label className="filter-label">Notas Clínicas (Evolução Contínua)</label>
-                <textarea
-                  className="filter-input"
-                  value={sessionNotesText}
-                  onChange={(e) => setSessionNotesText(e.target.value)}
-                  placeholder="Anote aqui a evolução clínica do analisando nesta sessão específica, temas trazidos, manifestações inconscientes observadas, sonhos relatados, etc..."
-                  rows={15}
-                  style={{ resize: 'none', flex: 1, minHeight: '300px', fontSize: '0.9rem', lineHeight: '1.6' }}
-                />
-              </div>
-
-              <Button variant="success" onClick={handleSaveSessionNotes} disabled={savingNotes} style={{ width: '100%' }}>
-                {savingNotes ? 'Salvando...' : '💾 Salvar Evolução da Sessão'}
-              </Button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: '300px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '12px', padding: '2rem' }}>
-              <div>
-                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>📝</span>
-                <h4 style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem', margin: 0 }}>Nenhum Atendimento Selecionado</h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>Selecione um atendimento no histórico ao lado para visualizar ou escrever as notas de evolução clínica correspondentes.</p>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
@@ -318,46 +860,99 @@ export function PatientDashboard({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
         
         {/* Card: Ficha do Analisando */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Ficha do Analisando</h3>
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', minHeight: 'auto' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.35rem', margin: 0 }}>Ficha do Analisando</h3>
           
-          <div className="filter-group">
-            <label className="filter-label">Telefone de Contato</label>
-            <input
-              type="text"
-              className="filter-input"
-              value={generalPhoneText}
-              onChange={(e) => setGeneralPhoneText(e.target.value)}
-              placeholder="Ex: (11) 99999-9999"
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <div className="filter-group">
+              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Telefone</label>
+              <input
+                type="text"
+                className="filter-input"
+                value={generalPhoneText}
+                onChange={(e) => setGeneralPhoneText(e.target.value)}
+                placeholder="Ex: (11) 99999-9999"
+                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
+              />
+            </div>
+
+            <div className="filter-group">
+              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Origem</label>
+              <select
+                className="filter-select"
+                value={generalOriginText}
+                onChange={(e) => setGeneralOriginText(e.target.value as any)}
+                style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
+              >
+                <option value="particular">Particular</option>
+                <option value="social_clinic">Clínica Social</option>
+                <option value="zenklub">Zenklub</option>
+                <option value="integrando_ser">Integrando Ser</option>
+                <option value="training_student">Aluno em Formação</option>
+              </select>
+            </div>
+
+            <div className="filter-group">
+              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Valor da Sessão (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="filter-input"
+                value={generalDefaultRate !== undefined ? generalDefaultRate : ''}
+                onChange={(e) => setGeneralDefaultRate(Number(e.target.value))}
+                placeholder="Ex: 82.00"
+                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
+              />
+            </div>
+
+            <div className="filter-group">
+              <label className="filter-label" style={{ fontSize: '0.7rem' }}>E-mail</label>
+              <input
+                type="email"
+                className="filter-input"
+                value={generalEmailText}
+                onChange={(e) => setGeneralEmailText(e.target.value)}
+                placeholder="Ex: paciente@email.com"
+                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
+              />
+            </div>
           </div>
 
-          <div className="filter-group">
-            <label className="filter-label">E-mail</label>
-            <input
-              type="email"
-              className="filter-input"
-              value={generalEmailText}
-              onChange={(e) => setGeneralEmailText(e.target.value)}
-              placeholder="Ex: paciente@email.com"
-            />
-          </div>
-
-          <div className="filter-group" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-            <label className="filter-label">Histórico Clínico / Anamnese / Notas Gerais</label>
+          <div className="filter-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <label className="filter-label" style={{ fontSize: '0.7rem' }}>Notas</label>
             <textarea
               className="filter-input"
               value={generalNotesText}
               onChange={(e) => setGeneralNotesText(e.target.value)}
-              placeholder="Histórico do paciente, queixas principais, objetivos analíticos..."
-              rows={10}
-              style={{ resize: 'vertical', minHeight: '200px', flex: 1 }}
+              placeholder="Histórico do paciente, queixas principais..."
+              rows={2}
+              style={{ resize: 'vertical', minHeight: '60px', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
             />
           </div>
 
-          <Button variant="primary" onClick={handleSaveGeneralPatientDetails} disabled={savingNotes} style={{ marginTop: '0.5rem' }}>
-            {savingNotes ? 'Salvando...' : '💾 Salvar Ficha Clínico-Cadastral'}
+          <Button variant="primary" onClick={handleSaveGeneralPatientDetails} disabled={savingNotes} style={{ marginTop: '0.1rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+            {savingNotes ? 'Salvando...' : '💾 Salvar Ficha'}
           </Button>
+
+          {selectedPatient.notes && (
+            <div style={{
+              background: 'rgba(56, 189, 248, 0.08)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              borderRadius: '8px',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.75rem',
+              color: 'var(--text-secondary)',
+              lineHeight: '1.4',
+              whiteSpace: 'pre-wrap',
+              marginTop: '0.4rem',
+              boxShadow: 'var(--shadow-glow)'
+            }}>
+              <strong style={{ display: 'block', marginBottom: '0.15rem', color: 'var(--accent-primary)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Notas Salvas:
+              </strong>
+              {selectedPatient.notes}
+            </div>
+          )}
         </div>
 
         {/* Card: Histórico de Reajustes de Valor */}

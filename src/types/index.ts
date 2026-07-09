@@ -15,6 +15,7 @@ export interface Patient {
   email?: string;
   notes?: string;
   rateReadjustments?: RateReadjustment[];
+  lastSessionDate?: string;
 }
 
 export interface Invoice {
@@ -49,6 +50,13 @@ export interface Session {
   googleEventId?: string;  // ID do evento vinculado no Google Calendar (para sync bidirecional)
   sessionValue?: number;   // Valor cobrado na sessão (R$)
   isPaid?: boolean;        // Pago ou Não Pago
+  isPackage?: boolean;     // Sessão paga via pacote (não computa na receita mensal)
+  isCancelled?: boolean;   // Sessão cancelada
+  isCharged?: boolean;     // Sessão cobrada (mesmo se cancelada)
+  isParentsSession?: boolean; // Sessão com os Pais do paciente
+  patientType?: string;    // Tipo de Paciente
+  isRentCancelled?: boolean; // Aluguel da sala cancelado/isento para esta sessão
+  isRentPaid?: boolean;      // Aluguel da sala pago
 }
 
 export interface PlatformTransaction {
