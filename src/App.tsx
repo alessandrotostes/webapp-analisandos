@@ -13,17 +13,17 @@ import {
   addSession,
   updateSession,
   deleteSession,
-  getRentLogs,
   getUpcomingSessions
 } from './services/firebase/firestoreService';
 import { Button } from './components/ui/Button';
-import type { Invoice, RentLog, Session, Patient, RateReadjustment } from './types';
+import type { Invoice, Session, Patient, RateReadjustment } from './types';
+import { LayoutDashboard, Users, Banknote, Landmark, Plus, Eye, EyeOff, LogOut } from 'lucide-react';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
-import { 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged 
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from './config/firebase-config';
@@ -35,23 +35,34 @@ import { InvoiceModal } from './components/modals/InvoiceModal';
 import { DashboardTab } from './components/dashboard/DashboardTab';
 import { PatientsTab } from './components/patients/PatientsTab';
 import { PatientDashboard } from './components/patients/PatientDashboard';
-import { SessionsTab } from './components/sessions/SessionsTab';
 import { InvoicesTab } from './components/invoices/InvoicesTab';
-import { RentTab } from './components/rent/RentTab';
 import { TransfersTab } from './components/transfers/TransfersTab';
+import { ConfirmModal } from './components/ui/ConfirmModal';
 
-// Utilitário para formatar moeda brasileira
-const formatCurrency = (val: number) => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL'
-  }).format(val);
-};
+
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'sessions' | 'invoices' | 'rent' | 'transfers'>(() => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'sessions' | 'invoices' | 'transfers'>(() => {
     return (localStorage.getItem('active_tab') as any) || 'dashboard';
   });
+
+  const [hideValues, setHideValues] = useState<boolean>(() => {
+    return localStorage.getItem('hide_values') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('hide_values', String(hideValues));
+  }, [hideValues]);
+
+  const formatCurrency = (val: number) => {
+    if (hideValues) {
+      return 'R$ ••••';
+    }
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(val);
+  };
 
   useEffect(() => {
     localStorage.setItem('active_tab', activeTab);
@@ -79,7 +90,7 @@ export default function App() {
   const handleLoginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/calendar.events');
-    
+
     try {
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
@@ -88,7 +99,11 @@ export default function App() {
         localStorage.setItem('google_access_token', token);
         setGoogleAccessToken(token);
       }
-      alert(`Olá, ${result.user.displayName}! Login efetuado e Google Agenda conectado com sucesso!`);
+      showConfirm(
+        `Olá, ${result.user.displayName}! Login efetuado e Google Agenda conectado com sucesso!`,
+        () => {},
+        { isAlert: true, title: 'Sucesso' }
+      );
     } catch (err: any) {
       setErrorMsg("Erro ao fazer login com o Google: " + err.message);
     }
@@ -99,7 +114,11 @@ export default function App() {
       await signOut(auth);
       localStorage.removeItem('google_access_token');
       setGoogleAccessToken(null);
-      alert("Logout efetuado com sucesso.");
+      showConfirm(
+        "Logout efetuado com sucesso.",
+        () => {},
+        { isAlert: true, title: 'Logout' }
+      );
     } catch (err: any) {
       setErrorMsg("Erro ao efetuar logout: " + err.message);
     }
@@ -112,12 +131,12 @@ export default function App() {
   /** Cria um evento no Google Calendar e retorna o eventId para vínculo */
   const createGoogleCalendarEvent = async (session: Omit<Session, 'id'> | Session): Promise<string | null> => {
     if (!googleAccessToken) return null;
-    
+
     try {
       const defaultTime = "14:00:00";
       const startDateTime = `${session.date}T${defaultTime}`;
       const durationHours = session.duration || 1.0;
-      
+
       const startMs = new Date(startDateTime).getTime();
       const endMs = startMs + durationHours * 60 * 60 * 1000;
       const endDateTime = new Date(endMs).toISOString().replace(/\.\d+Z$/, "");
@@ -239,28 +258,67 @@ export default function App() {
   // States de Dados
   const [patients, setPatients] = useState<Patient[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [rentLogs, setRentLogs] = useState<RentLog[]>([]);
-  const [upcomingSessions, setUpcomingSessions] = useState<Session[]>([]);
+    const [upcomingSessions, setUpcomingSessions] = useState<Session[]>([]);
 
   // Loading & Errors
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingUpcomingSessions, setLoadingUpcomingSessions] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
-  const [loadingRent, setLoadingRent] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Custom Confirmation / Alert Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isAlert?: boolean;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const showConfirm = useCallback((
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    options?: {
+      title?: string;
+      confirmText?: string;
+      cancelText?: string;
+      isAlert?: boolean;
+      onCancel?: () => void;
+    }
+  ) => {
+    setConfirmModal({
+      isOpen: true,
+      title: options?.title || (options?.isAlert ? 'Aviso' : 'Confirmação'),
+      message,
+      confirmText: options?.confirmText,
+      cancelText: options?.cancelText,
+      isAlert: options?.isAlert,
+      onConfirm: async () => {
+        await onConfirm();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      },
+      onCancel: () => {
+        if (options?.onCancel) options.onCancel();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  }, []);
 
   // Pagination for Invoices/Sessions
   const [invoicePageSize] = useState(15);
   const [lastInvoiceDoc, setLastInvoiceDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreInvoices, setHasMoreInvoices] = useState(true);
 
-  const [sessionPageSize] = useState(20);
-  const [lastSessionDoc, setLastSessionDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMoreSessions, setHasMoreSessions] = useState(true);
-
-  // Obter data atual do sistema para inicialização dinâmica
+        // Obter data atual do sistema para inicialização dinâmica
   const initDate = new Date();
   const currentYear = initDate.getFullYear();
   const currentMonthName = [
@@ -272,8 +330,7 @@ export default function App() {
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthName);
   const [invoiceFilters, setInvoiceFilters] = useState({ patientName: '' });
-  const [sessionFilters, setSessionFilters] = useState({ patientName: '', modality: '' });
-
+  
   // Modais de Criação / Edição
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
@@ -295,9 +352,11 @@ export default function App() {
     date: new Date().toISOString().split('T')[0],
     paymentInfo: '',
     duration: 1.0,
-    modality: 'particular',
+    modality: 'online',
+    patientType: 'particular',
     sessionValue: 150,
-    isPaid: false
+    isPaid: false,
+    isPackage: false
   });
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -333,54 +392,48 @@ export default function App() {
   }, [selectedPatientForDashboard]);
   const [patientDashboardSessions, setPatientDashboardSessions] = useState<Session[]>([]);
   const [loadingDashboardSessions, setLoadingDashboardSessions] = useState(false);
-  const [selectedSessionForNotes, setSelectedSessionForNotes] = useState<Session | null>(null);
-  const [sessionNotesText, setSessionNotesText] = useState('');
   const [generalNotesText, setGeneralNotesText] = useState('');
   const [generalPhoneText, setGeneralPhoneText] = useState('');
   const [generalEmailText, setGeneralEmailText] = useState('');
+  const [generalOriginText, setGeneralOriginText] = useState<'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student'>('particular');
+  const [generalDefaultRate, setGeneralDefaultRate] = useState<number>(0);
   const [savingNotes, setSavingNotes] = useState(false);
 
   // States para Repasses & Supervisão e Abas de Pacientes
   const [patientStatusFilterTab, setPatientStatusFilterTab] = useState<'active' | 'paused' | 'ended'>('active');
 
-  const [allSessionsForSelectedMonth, setAllSessionsForSelectedMonth] = useState<Session[]>([]);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [numSupervisions, setNumSupervisions] = useState(2);
   const [costPerSupervision, setCostPerSupervision] = useState(180);
 
   const loadAllSessionsForSelectedMonth = useCallback(async () => {
+    setLoadingSessions(true);
     try {
-      const monthNum = selectedMonth ? {
-        'JANEIRO': '01', 'FEVEREIRO': '02', 'MARÇO': '03', 'ABRIL': '04',
-        'MAIO': '05', 'JUNHO': '06', 'JULHO': '07', 'AGOSTO': '08',
-        'SETEMBRO': '09', 'OUTUBRO': '10', 'NOVEMBRO': '11', 'DEZEMBRO': '12'
-      }[selectedMonth] : null;
-
       // Busca todas as sessões para filtro local (limite de 2000)
       const result = await getSessions({
         pageSize: 2000
       });
-      
+
       setAllSessions(result.data);
 
-      const filtered = result.data.filter(s => {
-        const [yearStr, monthStr] = s.date.split('-');
-        const yearMatches = Number(yearStr) === selectedYear;
-        const monthMatches = monthNum ? monthStr === monthNum : true;
-        return yearMatches && monthMatches;
+      const invoicesResult = await getInvoices({
+        year: selectedYear,
+        pageSize: 2000
       });
-
-      setAllSessionsForSelectedMonth(filtered);
+      setAllInvoices(invoicesResult.data);
     } catch (err: any) {
-      console.error("Erro ao carregar sessões para repasses:", err);
+      console.error("Erro ao carregar dados globais (sessões e faturas):", err);
+    } finally {
+      setLoadingSessions(false);
     }
-  }, [selectedYear, selectedMonth]);
+  }, [selectedYear]);
 
   useEffect(() => {
     if (databaseSeeded) {
       loadAllSessionsForSelectedMonth();
     }
-  }, [selectedYear, selectedMonth, databaseSeeded, loadAllSessionsForSelectedMonth]);
+  }, [databaseSeeded, loadAllSessionsForSelectedMonth]);
 
   const loadPatientDashboardSessions = useCallback(async (patientName: string) => {
     setLoadingDashboardSessions(true);
@@ -390,13 +443,6 @@ export default function App() {
         pageSize: 100
       });
       setPatientDashboardSessions(result.data);
-      if (result.data.length > 0) {
-        setSelectedSessionForNotes(result.data[0]);
-        setSessionNotesText(result.data[0].notes || '');
-      } else {
-        setSelectedSessionForNotes(null);
-        setSessionNotesText('');
-      }
     } catch (err: any) {
       setErrorMsg("Erro ao buscar histórico de sessões do prontuário: " + err.message);
     } finally {
@@ -410,31 +456,14 @@ export default function App() {
       setGeneralNotesText(selectedPatientForDashboard.notes || '');
       setGeneralPhoneText(selectedPatientForDashboard.phone || '');
       setGeneralEmailText(selectedPatientForDashboard.email || '');
+      setGeneralOriginText(selectedPatientForDashboard.origin || 'particular');
+      setGeneralDefaultRate(selectedPatientForDashboard.defaultRate || 0);
     } else {
       setPatientDashboardSessions([]);
-      setSelectedSessionForNotes(null);
-      setSessionNotesText('');
     }
   }, [selectedPatientForDashboard, loadPatientDashboardSessions]);
 
-  const handleSaveSessionNotes = async () => {
-    if (!selectedSessionForNotes?.id) return;
-    setSavingNotes(true);
-    try {
-      await updateSession(selectedSessionForNotes.id, {
-        notes: sessionNotesText
-      });
-      setPatientDashboardSessions(prev =>
-        prev.map(s => s.id === selectedSessionForNotes.id ? { ...s, notes: sessionNotesText } : s)
-      );
-      setSelectedSessionForNotes(prev => prev ? { ...prev, notes: sessionNotesText } : null);
-      alert("Anotações de evolução salvas com sucesso!");
-    } catch (err: any) {
-      setErrorMsg("Erro ao salvar anotações: " + err.message);
-    } finally {
-      setSavingNotes(false);
-    }
-  };
+
 
   const handleSaveGeneralPatientDetails = async () => {
     if (!selectedPatientForDashboard?.id) return;
@@ -443,12 +472,18 @@ export default function App() {
       const updates = {
         notes: generalNotesText,
         phone: generalPhoneText,
-        email: generalEmailText
+        email: generalEmailText,
+        origin: generalOriginText,
+        defaultRate: generalDefaultRate
       };
       await updatePatient(selectedPatientForDashboard.id, updates);
       setSelectedPatientForDashboard(prev => prev ? { ...prev, ...updates } : null);
       loadPatientsData();
-      alert("Ficha do analisando atualizada com sucesso!");
+      showConfirm(
+        "Ficha do analisando atualizada com sucesso!",
+        () => {},
+        { isAlert: true, title: 'Sucesso' }
+      );
     } catch (err: any) {
       setErrorMsg("Erro ao atualizar ficha do analisando: " + err.message);
     } finally {
@@ -558,55 +593,7 @@ export default function App() {
     }
   }, [selectedYear, selectedMonth, invoiceFilters.patientName, patients, invoicePageSize]);
 
-  const loadSessionsData = useCallback(async (isLoadMore = false, startAfterDoc?: QueryDocumentSnapshot<DocumentData> | null) => {
-    setLoadingSessions(true);
-    try {
-      const searchName = sessionFilters.patientName.trim();
-      let patientQuery: string | string[] | undefined = undefined;
-
-      if (searchName) {
-        const matchingNames = patients
-          .filter(p => p.name.toLowerCase().includes(searchName.toLowerCase()))
-          .map(p => p.name);
-        patientQuery = matchingNames;
-      }
-
-      const hasFilter = !!searchName || !!sessionFilters.modality;
-
-      const result = await getSessions({
-        patientName: patientQuery,
-        modality: sessionFilters.modality || undefined,
-        pageSize: hasFilter ? 1000 : sessionPageSize,
-        lastVisible: isLoadMore ? (startAfterDoc || undefined) : undefined
-      });
-
-      if (isLoadMore) {
-        setSessions((prev) => [...prev, ...result.data]);
-      } else {
-        setSessions(result.data);
-      }
-
-      setLastSessionDoc(result.lastDoc);
-      setHasMoreSessions(hasFilter ? false : result.data.length === sessionPageSize);
-    } catch (err: any) {
-      setErrorMsg("Erro ao buscar sessões: " + err.message);
-    } finally {
-      setLoadingSessions(false);
-    }
-  }, [sessionFilters.patientName, sessionFilters.modality, patients, sessionPageSize]);
-
-  const loadRentData = useCallback(async () => {
-    setLoadingRent(true);
-    try {
-      const data = await getRentLogs();
-      setRentLogs(data);
-    } catch (err: any) {
-      setErrorMsg("Erro ao buscar logs de aluguel: " + err.message);
-    } finally {
-      setLoadingRent(false);
-    }
-  }, []);
-
+  
   // Verifica se o DB já possui dados no carregamento inicial
   useEffect(() => {
     isDatabaseSeeded()
@@ -623,10 +610,9 @@ export default function App() {
   useEffect(() => {
     if (databaseSeeded) {
       loadPatientsData();
-      loadRentData();
       loadUpcomingSessionsData();
     }
-  }, [databaseSeeded, loadPatientsData, loadRentData, loadUpcomingSessionsData]);
+  }, [databaseSeeded, loadPatientsData, loadUpcomingSessionsData]);
 
   // Recarrega dados com alterações nos filtros
   useEffect(() => {
@@ -635,11 +621,7 @@ export default function App() {
     }
   }, [selectedYear, selectedMonth, invoiceFilters.patientName, databaseSeeded, loadInvoicesData]);
 
-  useEffect(() => {
-    if (databaseSeeded) {
-      loadSessionsData(false, null);
-    }
-  }, [sessionFilters.patientName, sessionFilters.modality, databaseSeeded, loadSessionsData]);
+
 
   // ==========================================
   // OPERAÇÕES CRUD - PATIENTS (ANALISANDOS)
@@ -691,14 +673,18 @@ export default function App() {
     }
   };
 
-  const handleDeletePatient = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este analisando? Todos os atendimentos futuros precisarão ser gerenciados manualmente.")) return;
-    try {
-      await deletePatient(id);
-      loadPatientsData();
-    } catch (err: any) {
-      setErrorMsg("Erro ao excluir analisando: " + err.message);
-    }
+  const handleDeletePatient = (id: string) => {
+    showConfirm(
+      "Deseja realmente excluir este analisando? Todos os atendimentos futuros precisarão ser gerenciados manualmente.",
+      async () => {
+        try {
+          await deletePatient(id);
+          loadPatientsData();
+        } catch (err: any) {
+          setErrorMsg("Erro ao excluir analisando: " + err.message);
+        }
+      }
+    );
   };
 
   // ==========================================
@@ -708,26 +694,31 @@ export default function App() {
   const handleOpenSessionModal = (session?: Session) => {
     if (session) {
       setEditingSession(session);
+      const matchedPatient = patients.find(p => p.name === session.patientName);
       setSessionForm({
         patientName: session.patientName,
         date: session.date,
         paymentInfo: session.paymentInfo || '',
         duration: session.duration,
-        modality: session.modality,
+        modality: (session.modality === 'presencial' || session.modality === 'online') ? session.modality : (matchedPatient?.format || 'online'),
+        patientType: session.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(session.modality) ? session.modality : (matchedPatient?.origin || 'particular')),
         sessionValue: session.sessionValue !== undefined ? session.sessionValue : 0,
-        isPaid: session.isPaid !== undefined ? session.isPaid : false
+        isPaid: session.isPaid !== undefined ? session.isPaid : false,
+        isPackage: session.isPackage !== undefined ? session.isPackage : false
       });
     } else {
-      const firstPat = patients[0];
+      const firstPat = selectedPatientForDashboard || patients[0];
       setEditingSession(null);
       setSessionForm({
         patientName: firstPat?.name || '',
         date: new Date().toISOString().split('T')[0],
         paymentInfo: '',
         duration: 1.0,
-        modality: firstPat?.origin || 'particular',
+        modality: firstPat?.format || 'online',
+        patientType: firstPat?.origin || 'particular',
         sessionValue: firstPat?.defaultRate || 150,
-        isPaid: false
+        isPaid: false,
+        isPackage: false
       });
     }
     setShowSessionModal(true);
@@ -739,168 +730,65 @@ export default function App() {
     setSessionForm(prev => ({
       ...prev,
       patientName: name,
-      modality: matched ? matched.origin : 'particular',
+      modality: matched ? matched.format : 'online',
+      patientType: matched ? matched.origin : 'particular',
       sessionValue: matched ? matched.defaultRate : 150
     }));
   };
 
-  const [syncingGoogleCalendar, setSyncingGoogleCalendar] = useState(false);
-
-  const handleSyncFromGoogleCalendar = async () => {
-    if (!googleAccessToken) {
-      alert("Por favor, faça login com o Google para conectar sua agenda.");
-      return;
-    }
-    
-    setSyncingGoogleCalendar(true);
+  const syncInvoiceWithSessions = async (patientName: string, dateStr: string) => {
     try {
-      const monthNumMap: Record<string, string> = {
-        'JANEIRO': '01', 'FEVEREIRO': '02', 'MARÇO': '03', 'ABRIL': '04',
-        'MAIO': '05', 'JUNHO': '06', 'JULHO': '07', 'AGOSTO': '08',
-        'SETEMBRO': '09', 'OUTUBRO': '10', 'NOVEMBRO': '11', 'DEZEMBRO': '12'
-      };
-      
-      let timeMin = `${selectedYear}-01-01T00:00:00Z`;
-      let timeMax = `${selectedYear}-12-31T23:59:59Z`;
-      
-      if (selectedMonth) {
-        const mNum = monthNumMap[selectedMonth];
-        timeMin = `${selectedYear}-${mNum}-01T00:00:00Z`;
-        const lastDay = new Date(selectedYear, Number(mNum), 0).getDate();
-        timeMax = `${selectedYear}-${mNum}-${lastDay}T23:59:59Z`;
-      }
-      
-      // showDeleted=true para detectar eventos cancelados no Google
-      const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&showDeleted=true`;
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${googleAccessToken}`
-        }
+      if (!patientName || !dateStr) return;
+      const [sessionYearStr, sessionMonthStr] = dateStr.split('-');
+      const sessionYear = Number(sessionYearStr);
+      const sessionMonthNum = Number(sessionMonthStr);
+      const monthNames = [
+        '', 'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+        'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+      ];
+      const sessionMonthName = monthNames[sessionMonthNum] || '';
+
+      if (!sessionMonthName) return;
+
+      const invoiceResult = await getInvoices({
+        year: sessionYear,
+        month: sessionMonthName,
+        patientName,
+        pageSize: 100
       });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Token expirado. Por favor, saia e faça login novamente.");
-        }
-        throw new Error("Falha ao buscar eventos do Google Agenda.");
-      }
-      
-      const calendarData = await response.json();
-      const events = calendarData.items || [];
-      
-      // Busca todas as sessões existentes para comparação
-      const existingSessionsResult = await getSessions({ pageSize: 1000 });
-      const existingSessions = existingSessionsResult.data;
-      
-      let importedCount = 0;
-      let updatedCount = 0;
-      let removedCount = 0;
-      
-      for (const ev of events) {
-        const summary = ev.summary || '';
-        const eventId = ev.id;
-        
-        // ── EVENTO CANCELADO? Remove a sessão vinculada ──
-        if (ev.status === 'cancelled') {
-          const linkedSession = existingSessions.find(s => s.googleEventId === eventId);
-          if (linkedSession?.id) {
-            await deleteSession(linkedSession.id);
-            removedCount++;
-          }
-          continue;
-        }
-        
-        // ── Filtro: apenas eventos com prefixo "Sessão:" ──
-        if (!summary.toLowerCase().startsWith('sessão:') && !summary.toLowerCase().startsWith('sessao:')) {
-          continue;
-        }
-        
-        const rawPatientName = summary.replace(/^[Ss]ess[ãa]o:\s*/, '').trim();
-        const matchedPatient = patients.find(p => 
-          p.name.toLowerCase() === rawPatientName.toLowerCase() ||
-          p.name.toLowerCase().includes(rawPatientName.toLowerCase())
+
+      if (invoiceResult.data.length > 0) {
+        const sessionsResult = await getSessions({
+          patientName,
+          pageSize: 1000
+        });
+
+        const monthPrefix = `${sessionYearStr}-${sessionMonthStr}`;
+        const sessionsOfMonth = sessionsResult.data.filter(s =>
+          s.date.startsWith(monthPrefix) && (!s.isCancelled || s.isCharged)
         );
-        
-        if (!matchedPatient) continue;
-        
-        const eventDateStr = ev.start?.dateTime ? ev.start.dateTime.split('T')[0] : ev.start?.date;
-        if (!eventDateStr) continue;
-        
-        const duration = ev.end && ev.start && ev.start.dateTime && ev.end.dateTime
-          ? (new Date(ev.end.dateTime).getTime() - new Date(ev.start.dateTime).getTime()) / (1000 * 60 * 60)
-          : 1.0;
-        const roundedDuration = Number(duration.toFixed(1));
-        
-        // ── ATUALIZAÇÃO: sessão já vinculada pelo googleEventId ──
-        const linkedSession = existingSessions.find(s => s.googleEventId === eventId);
-        if (linkedSession?.id) {
-          // Verifica se houve mudança na data ou duração
-          const dateChanged = linkedSession.date !== eventDateStr;
-          const durationChanged = linkedSession.duration !== roundedDuration;
-          const nameChanged = linkedSession.patientName !== matchedPatient.name;
-          
-          if (dateChanged || durationChanged || nameChanged) {
-            await updateSession(linkedSession.id, {
-              date: eventDateStr,
-              duration: roundedDuration,
-              patientName: matchedPatient.name
+
+        const totalPaidFromSessions = sessionsOfMonth
+          .filter(s => s.isPaid === true)
+          .reduce((sum, s) => {
+            const patient = patients.find(p => p.name === s.patientName);
+            const rate = patient ? patient.defaultRate : 150;
+            const value = s.sessionValue !== undefined ? s.sessionValue : rate;
+            return sum + value;
+          }, 0);
+
+        for (const inv of invoiceResult.data) {
+          if (inv.id) {
+            const newPaidValue = Math.min(totalPaidFromSessions, inv.value);
+            await updateInvoice(inv.id, {
+              paidValue: newPaidValue,
+              pendingValue: Math.max(0, inv.value - newPaidValue)
             });
-            updatedCount++;
           }
-          continue;
-        }
-        
-        // ── DUPLICATA POR PACIENTE+DATA: já existe mas sem vínculo, vincula e atualiza ──
-        const existsByDateAndPatient = existingSessions.find(s => 
-          s.patientName === matchedPatient.name && s.date === eventDateStr && !s.googleEventId
-        );
-        if (existsByDateAndPatient?.id) {
-          await updateSession(existsByDateAndPatient.id, { 
-            googleEventId: eventId,
-            duration: roundedDuration
-          });
-          updatedCount++;
-          continue;
-        }
-        
-        // ── CRIAÇÃO: evento novo, não existe no app ──
-        const alreadyExistsByDate = existingSessions.some(s => 
-          s.patientName === matchedPatient.name && s.date === eventDateStr
-        );
-        if (!alreadyExistsByDate) {
-          const newSession: Session = {
-            patientName: matchedPatient.name,
-            date: eventDateStr,
-            duration: roundedDuration,
-            modality: matchedPatient.origin,
-            paymentInfo: String(matchedPatient.defaultRate),
-            googleEventId: eventId
-          };
-          
-          await addSession(newSession);
-          importedCount++;
         }
       }
-      
-      // Mensagem de resumo
-      const parts: string[] = [];
-      if (importedCount > 0) parts.push(`${importedCount} novo(s) importado(s)`);
-      if (updatedCount > 0) parts.push(`${updatedCount} atualizado(s)`);
-      if (removedCount > 0) parts.push(`${removedCount} removido(s)`);
-      
-      if (parts.length > 0) {
-        loadSessionsData(false);
-        loadAllSessionsForSelectedMonth();
-        loadUpcomingSessionsData();
-        alert(`Sincronização concluída!\n${parts.join('\n')}`);
-      } else {
-        alert("Sincronização concluída. Tudo já está atualizado.");
-      }
-    } catch (err: any) {
-      setErrorMsg("Erro ao sincronizar com Google Agenda: " + err.message);
-    } finally {
-      setSyncingGoogleCalendar(false);
+    } catch (err) {
+      console.error("Erro ao sincronizar fatura com sessões:", err);
     }
   };
 
@@ -910,12 +798,18 @@ export default function App() {
 
     try {
       if (editingSession?.id) {
+        const oldSession = allSessions.find(s => s.id === editingSession.id) || editingSession;
         // EDIÇÃO: atualiza no Firestore e sincroniza com Google Calendar
         await updateSession(editingSession.id, sessionForm as Session);
 
         // Se a sessão tem um eventId vinculado, atualiza o evento no Google
         if (googleAccessToken && editingSession.googleEventId) {
           await updateGoogleCalendarEvent(editingSession.googleEventId, sessionForm as Session);
+        }
+        
+        await syncInvoiceWithSessions(sessionForm.patientName, sessionForm.date);
+        if (oldSession.date.substring(0, 7) !== sessionForm.date.substring(0, 7)) {
+          await syncInvoiceWithSessions(oldSession.patientName, oldSession.date);
         }
       } else {
         // CRIAÇÃO: salva no Firestore e cria evento no Google Calendar
@@ -929,11 +823,12 @@ export default function App() {
             await updateSession(firestoreId, { googleEventId: eventId });
           }
         }
+        await syncInvoiceWithSessions(newSessionData.patientName, newSessionData.date);
       }
       setShowSessionModal(false);
-      loadSessionsData(false);
-      loadAllSessionsForSelectedMonth();
+            loadAllSessionsForSelectedMonth();
       loadUpcomingSessionsData();
+      loadInvoicesData(false);
       if (selectedPatientForDashboard) {
         loadPatientDashboardSessions(selectedPatientForDashboard.name);
       }
@@ -942,48 +837,255 @@ export default function App() {
     }
   };
 
-  const handleDeleteSession = async (id: string) => {
-    if (!window.confirm("Deseja excluir este registro de sessão?")) return;
-    try {
-      // Busca a sessão para verificar se tem eventId vinculado ao Google
-      const sessionToDelete = sessions.find(s => s.id === id);
-      if (sessionToDelete?.googleEventId && googleAccessToken) {
-        await deleteGoogleCalendarEvent(sessionToDelete.googleEventId);
-      }
+  const handleDeleteSession = (id: string) => {
+    showConfirm(
+      "Deseja excluir este registro de sessão?",
+      async () => {
+        try {
+          // Busca a sessão para verificar se tem eventId vinculado ao Google
+          const sessionToDelete = allSessions.find(s => s.id === id);
+          if (sessionToDelete?.googleEventId && googleAccessToken) {
+            await deleteGoogleCalendarEvent(sessionToDelete.googleEventId);
+          }
 
-      await deleteSession(id);
-      loadSessionsData(false);
-      loadAllSessionsForSelectedMonth();
-      loadUpcomingSessionsData();
-      if (selectedPatientForDashboard) {
-        loadPatientDashboardSessions(selectedPatientForDashboard.name);
+          await deleteSession(id);
+          if (sessionToDelete) {
+            await syncInvoiceWithSessions(sessionToDelete.patientName, sessionToDelete.date);
+          }
+                    loadAllSessionsForSelectedMonth();
+          loadUpcomingSessionsData();
+          loadInvoicesData(false);
+          if (selectedPatientForDashboard) {
+            loadPatientDashboardSessions(selectedPatientForDashboard.name);
+          }
+        } catch (err: any) {
+          setErrorMsg("Erro ao excluir sessão: " + err.message);
+        }
       }
-    } catch (err: any) {
-      setErrorMsg("Erro ao excluir sessão: " + err.message);
-    }
+    );
   };
 
   const handleToggleSessionPaymentStatus = async (session: Session) => {
     if (!session.id) return;
     try {
-      const newStatus = !session.isPaid;
-      await updateSession(session.id, { isPaid: newStatus });
-      
-      // Atualiza o estado das sessões no dashboard
-      setPatientDashboardSessions(prev =>
-        prev.map(s => s.id === session.id ? { ...s, isPaid: newStatus } : s)
-      );
+      // Ciclo: Não Pago → Pago → Pacote → Não Pago
+      let newIsPaid: boolean;
+      let newIsPackage: boolean;
 
-      // Atualiza a sessão selecionada para anotações se for a mesma
-      if (selectedSessionForNotes?.id === session.id) {
-        setSelectedSessionForNotes(prev => prev ? { ...prev, isPaid: newStatus } : null);
+      if (!session.isPaid && !session.isPackage) {
+        // Não Pago → Pago
+        newIsPaid = true;
+        newIsPackage = false;
+      } else if (session.isPaid && !session.isPackage) {
+        // Pago → Pacote
+        newIsPaid = false;
+        newIsPackage = true;
+      } else {
+        // Pacote → Não Pago
+        newIsPaid = false;
+        newIsPackage = false;
       }
 
-      loadSessionsData(false);
-      loadAllSessionsForSelectedMonth();
+      await updateSession(session.id, { isPaid: newIsPaid, isPackage: newIsPackage });
+
+      // Atualiza o estado das sessões no dashboard (otimista)
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === session.id ? { ...s, isPaid: newIsPaid, isPackage: newIsPackage } : s)
+      );
+
+      // Sincronizar o paidValue da fatura correspondente
+      await syncInvoiceWithSessions(session.patientName, session.date);
+
+            loadAllSessionsForSelectedMonth();
       loadUpcomingSessionsData();
+      loadInvoicesData(false);
     } catch (err: any) {
       setErrorMsg("Erro ao alterar status de pagamento da sessão: " + err.message);
+    }
+  };
+
+  const handleToggleSessionCancellation = async (session: Session) => {
+    if (!session.id) return;
+    try {
+      const newCancelled = !session.isCancelled;
+      const updates: Partial<Session> = {
+        isCancelled: newCancelled,
+        isCharged: false
+      };
+
+      await updateSession(session.id, updates);
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === session.id ? { ...s, isCancelled: newCancelled, isCharged: false } : s)
+      );
+
+      await syncInvoiceWithSessions(session.patientName, session.date);
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao alterar status de cancelamento da sessão: " + err.message);
+    }
+  };
+
+  const handleToggleSessionCharge = async (session: Session) => {
+    if (!session.id) return;
+    try {
+      const newCharged = !session.isCharged;
+      const updates: Partial<Session> = {
+        isCharged: newCharged
+      };
+
+      await updateSession(session.id, updates);
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === session.id ? { ...s, ...updates } : s)
+      );
+
+      await syncInvoiceWithSessions(session.patientName, session.date);
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao alterar status de cobrança da sessão: " + err.message);
+    }
+  };
+
+  const handleUpdateSessionValue = async (sessionId: string, value: number) => {
+    try {
+      await updateSession(sessionId, { sessionValue: value });
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, sessionValue: value } : s)
+      );
+
+      const session = patientDashboardSessions.find(s => s.id === sessionId);
+      if (session) {
+        await syncInvoiceWithSessions(session.patientName, session.date);
+      }
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar valor da sessão: " + err.message);
+    }
+  };
+
+  const handleUpdateSessionNotes = async (sessionId: string, notes: string) => {
+    try {
+      await updateSession(sessionId, { notes });
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, notes } : s)
+      );
+
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar anotações da sessão: " + err.message);
+    }
+  };
+
+  const handleUpdateSessionDate = async (sessionId: string, date: string) => {
+    try {
+      await updateSession(sessionId, { date });
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, date } : s)
+      );
+
+      const session = patientDashboardSessions.find(s => s.id === sessionId);
+      if (session) {
+        await syncInvoiceWithSessions(session.patientName, date);
+        if (session.date.substring(0, 7) !== date.substring(0, 7)) {
+          await syncInvoiceWithSessions(session.patientName, session.date);
+        }
+      }
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar data da sessão: " + err.message);
+    }
+  };
+
+  const handleUpdateSessionModality = async (sessionId: string, modality: string) => {
+    try {
+      await updateSession(sessionId, { modality });
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, modality } : s)
+      );
+
+      const session = patientDashboardSessions.find(s => s.id === sessionId);
+      if (session) {
+        await syncInvoiceWithSessions(session.patientName, session.date);
+      }
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar modalidade da sessão: " + err.message);
+    }
+  };
+
+  const handleUpdateSessionPatientType = async (sessionId: string, patientType: string) => {
+    try {
+      await updateSession(sessionId, { patientType });
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, patientType } : s)
+      );
+
+      const session = patientDashboardSessions.find(s => s.id === sessionId);
+      if (session) {
+        await syncInvoiceWithSessions(session.patientName, session.date);
+      }
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+      loadInvoicesData(false);
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar tipo de paciente da sessão: " + err.message);
+    }
+  };
+
+  const handleToggleSessionRentCancelled = async (sessionId: string, currentVal: boolean) => {
+    try {
+      const newVal = !currentVal;
+      await updateSession(sessionId, { isRentCancelled: newVal });
+
+      setAllSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, isRentCancelled: newVal } : s)
+      );
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, isRentCancelled: newVal } : s)
+      );
+
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+    } catch (err: any) {
+      setErrorMsg("Erro ao alterar cancelamento do aluguel da sessão: " + err.message);
+    }
+  };
+
+  const handleToggleSessionRentPaid = async (sessionId: string, currentVal: boolean) => {
+    try {
+      const newVal = !currentVal;
+      await updateSession(sessionId, { isRentPaid: newVal });
+
+      setAllSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, isRentPaid: newVal } : s)
+      );
+
+      setPatientDashboardSessions(prev =>
+        prev.map(s => s.id === sessionId ? { ...s, isRentPaid: newVal } : s)
+      );
+
+            loadAllSessionsForSelectedMonth();
+      loadUpcomingSessionsData();
+    } catch (err: any) {
+      setErrorMsg("Erro ao alterar status de pagamento do aluguel da sessão: " + err.message);
     }
   };
 
@@ -1002,7 +1104,7 @@ export default function App() {
         patientName: invoice.patientName,
         value: invoice.value,
         paidValue: invoice.paidValue,
-        pendingValue: invoice.pendingValue,
+        pendingValue: Math.max(0, invoice.value - invoice.paidValue),
         notes: invoice.notes || ''
       });
     } else {
@@ -1061,23 +1163,27 @@ export default function App() {
     }
   };
 
-  const handleDeleteInvoice = async (id: string) => {
-    if (!window.confirm("Deseja excluir esta fatura?")) return;
-    try {
-      await deleteInvoice(id);
-      loadInvoicesData(false);
-    } catch (err: any) {
-      setErrorMsg("Erro ao excluir fatura: " + err.message);
-    }
+  const handleDeleteInvoice = (id: string) => {
+    showConfirm(
+      "Deseja excluir esta fatura?",
+      async () => {
+        try {
+          await deleteInvoice(id);
+          loadInvoicesData(false);
+        } catch (err: any) {
+          setErrorMsg("Erro ao excluir fatura: " + err.message);
+        }
+      }
+    );
   };
 
   // ==========================================
   // METRICAS FINANCEIRAS
   // ==========================================
-  
+
   // Encontra a data da última sessão de um paciente
   const getPatientLastSessionDate = (patientName: string) => {
-    const pSessions = allSessions.filter(s => s.patientName === patientName);
+    const pSessions = allSessions.filter(s => s.patientName === patientName && (!s.isCancelled || s.isCharged));
     if (pSessions.length === 0) return null;
     const sorted = pSessions.map(s => s.date).sort();
     return sorted[sorted.length - 1]; // YYYY-MM-DD
@@ -1113,39 +1219,282 @@ export default function App() {
     return invMonthIdx <= lastMonthIdx;
   };
 
+  // Faturamento Zenklub de acordo com ciclo de faturamento (24 do mês anterior a 23 do atual) - Para exibição no Dashboard do mês selecionado
+  const getZenklubSumForDashboard = (year: number, monthName: string) => {
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+    const M = monthNumMap[monthName] || 1;
+
+    // Ciclo do dashboard do mês M: de 24 do mês M-1 a 23 do mês M
+    let endMonthIndex = M;
+    let endYear = year;
+
+    let startMonthIndex = M - 1;
+    let startYear = year;
+    if (startMonthIndex === 0) {
+      startMonthIndex = 12;
+      startYear = year - 1;
+    }
+
+    const startStr = `${startYear}-${String(startMonthIndex).padStart(2, '0')}-24`;
+    const endStr = `${endYear}-${String(endMonthIndex).padStart(2, '0')}-23`;
+
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+
+    const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
+    const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
+
+    const zenklubCycleSessions = allSessions.filter(s => {
+      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+      return isZenklub && s.date >= startStr && s.date <= endStr && s.date <= todayStr;
+    });
+
+    return zenklubCycleSessions.reduce((sum, s) => {
+      const p = patients.find(pat => pat.name === s.patientName);
+      const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 0);
+      const value = s.sessionValue !== undefined ? s.sessionValue : rate;
+      return sum + value;
+    }, 0);
+  };
+
+  // Faturamento Zenklub de acordo com ciclo de faturamento (24 do mês M-2 a 23 do mês M-1) - Para inclusão na Fatura virtual paga no dia 6 do mês M
+  const getZenklubSumForInvoice = (year: number, monthName: string) => {
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+    const M = monthNumMap[monthName] || 1;
+
+    // Ciclo da fatura do mês M: de 24 do mês M-2 a 23 do mês M-1
+    let endMonthIndex = M - 1;
+    let endYear = year;
+    if (endMonthIndex === 0) {
+      endMonthIndex = 12;
+      endYear = year - 1;
+    }
+
+    let startMonthIndex = M - 2;
+    let startYear = year;
+    if (startMonthIndex === 0) {
+      startMonthIndex = 12;
+      startYear = year - 1;
+    } else if (startMonthIndex === -1) {
+      startMonthIndex = 11;
+      startYear = year - 1;
+    }
+
+    const startStr = `${startYear}-${String(startMonthIndex).padStart(2, '0')}-24`;
+    const endStr = `${endYear}-${String(endMonthIndex).padStart(2, '0')}-23`;
+
+    const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
+    const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
+
+    const zenklubCycleSessions = allSessions.filter(s => {
+      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+      return isZenklub && s.date >= startStr && s.date <= endStr;
+    });
+
+    return zenklubCycleSessions.reduce((sum, s) => {
+      const p = patients.find(pat => pat.name === s.patientName);
+      const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 0);
+      const value = s.sessionValue !== undefined ? s.sessionValue : rate;
+      return sum + value;
+    }, 0);
+  };
+
+  const getZenklubTotalFaturado = () => {
+    if (!selectedMonth) return 0;
+    return getZenklubSumForDashboard(selectedYear, selectedMonth);
+  };
+
+  const zenklubTotalFaturado = getZenklubTotalFaturado();
+
+  const getZenklubCyclePeriodLabel = () => {
+    if (!selectedMonth) return '';
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+    const M = monthNumMap[selectedMonth] || 1;
+
+    // Ciclo do dashboard do mês M: de 24 do mês M-1 a 23 do mês M
+    let endMonthIndex = M;
+    let endYear = selectedYear;
+
+    let startMonthIndex = M - 1;
+    let startYear = selectedYear;
+    if (startMonthIndex === 0) {
+      startMonthIndex = 12;
+      startYear = selectedYear - 1;
+    }
+
+    const startFormatted = `24/${String(startMonthIndex).padStart(2, '0')}/${startYear}`;
+    const endFormatted = `23/${String(endMonthIndex).padStart(2, '0')}/${endYear}`;
+    return `${startFormatted} a ${endFormatted}`;
+  };
+
+  const zenklubCyclePeriodLabel = getZenklubCyclePeriodLabel();
+
+  const getZenklubSessionsForDetail = () => {
+    if (!selectedMonth) return [];
+
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+    const M = monthNumMap[selectedMonth] || 1;
+
+    // Ciclo do dashboard do mês M: de 24 do mês M-1 a 23 do mês M
+    let endMonthIndex = M;
+    let endYear = selectedYear;
+
+    let startMonthIndex = M - 1;
+    let startYear = selectedYear;
+    if (startMonthIndex === 0) {
+      startMonthIndex = 12;
+      startYear = selectedYear - 1;
+    }
+
+    const startStr = `${startYear}-${String(startMonthIndex).padStart(2, '0')}-24`;
+    const endStr = `${endYear}-${String(endMonthIndex).padStart(2, '0')}-23`;
+
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+
+    const zenklubPatientsLocal = patients.filter(p => p.origin === 'zenklub');
+    const zenklubPatientNamesLocal = new Set(zenklubPatientsLocal.map(p => p.name));
+
+    const zenklubCycleSessions = allSessions.filter(s => {
+      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNamesLocal.has(s.patientName) || s.modality === 'zenklub'));
+      return isZenklub && s.date >= startStr && s.date <= endStr && s.date <= todayStr;
+    });
+
+    return zenklubCycleSessions.map(s => {
+      const p = patients.find(pat => pat.name === s.patientName);
+      const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 0);
+      const value = s.sessionValue !== undefined ? s.sessionValue : rate;
+      return {
+        patientName: s.patientName,
+        date: s.date,
+        value
+      };
+    }).sort((a, b) => a.date.localeCompare(b.date));
+  };
+
+  const zenklubSessionsForDetail = getZenklubSessionsForDetail();
+
+  // Filtrar as faturas do dashboard para não mostrar pacientes Zenklub individuais
+  const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
+  const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
+  const filteredInvoices = invoices.filter(inv => !zenklubPatientNames.has(inv.patientName) && inv.patientName.toUpperCase() !== 'ZENKLUB');
+
+  // Adicionar a fatura virtual do ZENKLUB se houver faturamento
+  const displayInvoices: Invoice[] = [...filteredInvoices];
+  const zenklubSum = selectedMonth ? getZenklubSumForInvoice(selectedYear, selectedMonth) : 0;
+
+  if (selectedMonth && zenklubSum > 0) {
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+    const M = monthNumMap[selectedMonth] || 1;
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    const paymentDateStr = `${selectedYear}-${String(M).padStart(2, '0')}-06`;
+    const isPaid = todayStr >= paymentDateStr;
+
+    displayInvoices.push({
+      id: 'virtual-zenklub-invoice',
+      year: selectedYear,
+      month: selectedMonth,
+      invoiceNumber: 9999,
+      date: paymentDateStr,
+      patientName: 'ZENKLUB',
+      value: zenklubSum,
+      paidValue: isPaid ? zenklubSum : 0,
+      pendingValue: isPaid ? 0 : zenklubSum,
+      notes: 'Faturamento consolidado do ciclo Zenklub'
+    });
+  }
+
   // Faturamento Geral (Incluso ativos, e inativos até o mês da última sessão)
-  const totalMetrics = invoices
-    .filter(inv => isInvoiceValidForPatientStatus(inv))
+  const totalMetrics = displayInvoices
+    .filter(inv => isInvoiceValidForPatientStatus(inv) && inv.id !== 'virtual-zenklub-invoice')
     .reduce(
       (acc, curr) => {
         acc.faturado += curr.value;
         acc.recebido += curr.paidValue;
-        acc.pendente += curr.pendingValue;
+        acc.pendente += Math.max(0, curr.value - curr.paidValue);
         return acc;
       },
       { faturado: 0, recebido: 0, pendente: 0 }
     );
 
-  // Custo de Consultório
-  const rentTotalPaid = rentLogs.reduce((sum, log) => sum + log.valuePaid, 0);
+
+
+  // Mês vigente e sessões correspondentes para aba de repasses
+  const currentRepasseMonthName = (() => {
+    const months = [
+      'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+      'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+    ];
+    return selectedMonth || months[new Date().getMonth()];
+  })();
+
+  const monthNumForRepasse = {
+    'JANEIRO': '01', 'FEVEREIRO': '02', 'MARÇO': '03', 'ABRIL': '04',
+    'MAIO': '05', 'JUNHO': '06', 'JULHO': '07', 'AGOSTO': '08',
+    'SETEMBRO': '09', 'OUTUBRO': '10', 'NOVEMBRO': '11', 'DEZEMBRO': '12'
+  }[currentRepasseMonthName];
+
+  const repasseSessions = allSessions.filter(s => {
+    const [yearStr, monthStr] = s.date.split('-');
+    return Number(yearStr) === selectedYear && monthStr === monthNumForRepasse;
+  });
 
   // Cálculos para Repasse Integrando Ser (Engloba pausados/encerrados)
   const integrandoPatients = patients.filter(p => p.origin === 'integrando_ser');
   const integrandoRows = integrandoPatients.map(p => {
-    const pSessions = allSessionsForSelectedMonth.filter(s => s.patientName === p.name);
-    const sessionsCount = pSessions.length;
-    const rate = p.defaultRate;
-    const gross = sessionsCount * rate;
-    const repasse = gross * 0.25;
+    const pSessions = repasseSessions.filter(s => s.patientName === p.name && (!s.isCancelled || s.isCharged));
+    const sessions = pSessions.map(s => {
+      const value = s.sessionValue !== undefined ? s.sessionValue : p.defaultRate;
+      const discount = value * 0.25;
+      return {
+        date: s.date,
+        value,
+        discount
+      };
+    }).sort((a, b) => a.date.localeCompare(b.date));
+
+    const sessionsCount = sessions.length;
+    const gross = sessions.reduce((sum, s) => sum + s.value, 0);
+    const repasse = sessions.reduce((sum, s) => sum + s.discount, 0);
     return {
       name: p.name,
       sessionsCount,
-      rate,
       gross,
-      repasse
+      repasse,
+      sessions
     };
   }).filter(r => r.sessionsCount > 0); // Exibe apenas se teve sessão no mês
-  
+
   const integrandoTotalSessions = integrandoRows.reduce((sum, r) => sum + r.sessionsCount, 0);
   const integrandoTotalGross = integrandoRows.reduce((sum, r) => sum + r.gross, 0);
   const integrandoTotalRepasse = integrandoRows.reduce((sum, r) => sum + r.repasse, 0);
@@ -1153,87 +1502,243 @@ export default function App() {
   // Cálculos para Repasse Consultório (Presencial - Engloba pausados/encerrados)
   const presencialPatients = patients.filter(p => p.format === 'presencial');
   const presencialRows = presencialPatients.map(p => {
-    const pSessions = allSessionsForSelectedMonth.filter(s => s.patientName === p.name);
+    const pSessions = repasseSessions.filter(s => 
+      s.patientName === p.name && 
+      (!s.isCancelled || s.isCharged) && 
+      (s.modality || '').toLowerCase() === 'presencial'
+    );
+    const sessions = pSessions.map(s => {
+      const value = s.sessionValue !== undefined ? s.sessionValue : p.defaultRate;
+      const discount = s.isRentCancelled ? 0.00 : 30.00;
+      return {
+        id: s.id,
+        date: s.date,
+        value,
+        discount,
+        isRentCancelled: s.isRentCancelled || false,
+        isRentPaid: s.isRentPaid || false
+      };
+    }).sort((a, b) => a.date.localeCompare(b.date));
+
+    const sessionsCount = sessions.length;
+    const gross = sessions.reduce((sum, s) => sum + s.value, 0);
+    const rent = sessions.reduce((sum, s) => sum + s.discount, 0);
+    const netTotal = gross - rent;
+    return {
+      name: p.name,
+      sessionsCount,
+      gross,
+      rent,
+      netTotal,
+      sessions
+    };
+  }).filter(r => r.sessionsCount > 0); // Exibe apenas se teve sessão no mês
+
+  const presencialTotalSessions = presencialRows.reduce((sum, r) => sum + r.sessionsCount, 0);
+  const presencialTotalRent = presencialRows.reduce((sum, r) => sum + r.rent, 0);
+  const presencialTotalRentPaid = presencialRows.reduce((sum, r) => {
+    const paidRentForPat = r.sessions
+      .filter((s: any) => !s.isRentCancelled && s.isRentPaid)
+      .reduce((sSum: number, s: any) => sSum + s.discount, 0);
+    return sum + paidRentForPat;
+  }, 0);
+  const presencialTotalNet = presencialRows.reduce((sum, r) => sum + r.netTotal, 0);
+
+  // Cálculos para Repasse Supervisão (Particular - Engloba pausados/encerrados)
+  // Utilize apenas os pacientes particulares online para fazer o calculo do repasse para supervisao
+  const privatePatientsForRows = patients.filter(p => p.origin === 'particular' && p.format === 'online');
+  const privateRows = privatePatientsForRows.map(p => {
+    const pSessions = repasseSessions.filter(s => s.patientName === p.name && (!s.isCancelled || s.isCharged));
     const sessionsCount = pSessions.length;
     const rate = p.defaultRate;
     const gross = sessionsCount * rate;
-    const rent = sessionsCount * 30.00;
-    const netRate = rate - 30.00;
-    const netTotal = sessionsCount * netRate;
     return {
       name: p.name,
       sessionsCount,
       rate,
-      gross,
-      rent,
-      netRate,
-      netTotal
+      gross
     };
   }).filter(r => r.sessionsCount > 0); // Exibe apenas se teve sessão no mês
-  
-  const presencialTotalSessions = presencialRows.reduce((sum, r) => sum + r.sessionsCount, 0);
-  const presencialTotalRent = presencialRows.reduce((sum, r) => sum + r.rent, 0);
-  const presencialTotalNet = presencialRows.reduce((sum, r) => sum + r.netTotal, 0);
+
+  const privateTotalSessions = privateRows.reduce((sum, r) => sum + r.sessionsCount, 0);
+  const privateTotalSupervision = privateTotalSessions > 0 ? 360.00 : 0.00;
+  const privateTotalGross = privateRows.reduce((sum, r) => sum + r.gross, 0);
+  const privateTotalNet = privateTotalGross - privateTotalSupervision;
 
   // Metas de Supervisão
-  const supervisionTarget = numSupervisions * costPerSupervision;
-  const privateActivePatients = patients.filter(p => p.origin === 'particular' && p.status === 'active');
-  const privateSessions = allSessionsForSelectedMonth.filter(s => {
+  const supervisionTarget = 360.00;
+  const privateActivePatients = patients.filter(p => p.origin === 'particular' && p.status === 'active' && p.format === 'online');
+  const privateSessions = repasseSessions.filter(s => {
     const p = patients.find(pat => pat.name === s.patientName);
-    return p?.origin === 'particular' && p?.status === 'active';
+    return p?.origin === 'particular' && p?.status === 'active' && p?.format === 'online' && (!s.isCancelled || s.isCharged);
   });
   const privateSessionsCount = privateSessions.length;
   const suggestedSavePerSession = privateSessionsCount > 0 ? (supervisionTarget / privateSessionsCount) : 0;
   const suggestedSavePerPatientMonthly = privateActivePatients.length > 0 ? (supervisionTarget / privateActivePatients.length) : 0;
   const suggestedSavePerSessionAssumingFour = privateActivePatients.length > 0 ? (supervisionTarget / privateActivePatients.length / 4) : 0;
 
-  // Faturamento Zenklub de acordo com ciclo de faturamento (24 do mês anterior a 23 do atual)
-  const getZenklubTotalFaturado = () => {
+  // ==========================================
+  // SALÁRIO LÍQUIDO & MÉTRICAS ANUAIS
+  // ==========================================
+  const monthsList = [
+    'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+    'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+  ];
+  const salaryMonth = selectedMonth || monthsList[new Date().getMonth()];
+
+  const salaryInvoices = displayInvoices.filter(inv => inv.year === selectedYear && inv.month === salaryMonth);
+  const salaryMetrics = salaryInvoices.reduce(
+    (acc, curr) => {
+      acc.faturado += curr.value;
+      acc.recebido += curr.paidValue;
+      return acc;
+    },
+    { faturado: 0, recebido: 0 }
+  );
+
+  const salaryTotalRepasses = integrandoTotalRepasse + presencialTotalRent + privateTotalSupervision;
+  const salarioLiquidoPrevisto = salaryMetrics.faturado - salaryTotalRepasses;
+  const salarioLiquidoRecebido = salaryMetrics.recebido - salaryTotalRepasses;
+
+  const calculateAnnualRepasses = () => {
+    let totalIntegrandoRepasse = 0;
+    let totalPresencialRent = 0;
+    let totalPrivateSupervision = 0;
+
+    const activeMonthIndex = monthsList.indexOf(salaryMonth);
+    monthsList.slice(0, activeMonthIndex + 1).forEach((_, mIdx) => {
+      const mNum = String(mIdx + 1).padStart(2, '0');
+      const mSessions = allSessions.filter(s => {
+        const [yearStr, monthStr] = s.date.split('-');
+        return Number(yearStr) === selectedYear && monthStr === mNum;
+      });
+
+      // Integrando
+      const integrandoPats = patients.filter(p => p.origin === 'integrando_ser');
+      integrandoPats.forEach(p => {
+        const count = mSessions.filter(s => s.patientName === p.name && (!s.isCancelled || s.isCharged)).length;
+        totalIntegrandoRepasse += count * p.defaultRate * 0.25;
+      });
+
+      // Presencial (aluguel)
+      const presencialPats = patients.filter(p => p.format === 'presencial');
+      presencialPats.forEach(p => {
+        const matchingSessions = mSessions.filter(s => 
+          s.patientName === p.name && 
+          (!s.isCancelled || s.isCharged) && 
+          (s.modality || '').toLowerCase() === 'presencial'
+        );
+        matchingSessions.forEach(s => {
+          if (!s.isRentCancelled) {
+            totalPresencialRent += 30.00;
+          }
+        });
+      });
+
+      // Particular online (supervisão)
+      const privatePats = patients.filter(p => p.origin === 'particular' && p.format === 'online');
+      let hasPrivateOnline = false;
+      privatePats.forEach(p => {
+        const count = mSessions.filter(s => s.patientName === p.name && (!s.isCancelled || s.isCharged)).length;
+        if (count > 0) hasPrivateOnline = true;
+      });
+      if (hasPrivateOnline) {
+        totalPrivateSupervision += 360.00;
+      }
+    });
+
+    return totalIntegrandoRepasse + totalPresencialRent + totalPrivateSupervision;
+  };
+
+  const annualRepasses = calculateAnnualRepasses();
+
+  const getAnnualMetrics = () => {
+    const activeMonthIndex = monthsList.indexOf(salaryMonth);
+    const monthsToInclude = new Set(monthsList.slice(0, activeMonthIndex + 1));
+
+    const yearInvoices = allInvoices.filter(inv => 
+      inv.year === selectedYear && 
+      monthsToInclude.has(inv.month) &&
+      isInvoiceValidForPatientStatus(inv) &&
+      !zenklubPatientNames.has(inv.patientName) && 
+      inv.patientName.toUpperCase() !== 'ZENKLUB'
+    );
+    
+    let zenklubAnnualSum = 0;
+    monthsList.slice(0, activeMonthIndex + 1).forEach((mName) => {
+      const zenklubInv = allInvoices.find(i => 
+        i.year === selectedYear && 
+        i.month === mName && 
+        i.patientName.toUpperCase() === 'ZENKLUB'
+      );
+      if (zenklubInv) {
+        zenklubAnnualSum += zenklubInv.paidValue;
+      } else {
+        const sum = getZenklubSumForInvoice(selectedYear, mName);
+        const yyyy = new Date().getFullYear();
+        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+        const dd = String(new Date().getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}-${mm}-${dd}`;
+        const monthNumMap: Record<string, string> = {
+          'JANEIRO': '01', 'FEVEREIRO': '02', 'MARÇO': '03', 'ABRIL': '04',
+          'MAIO': '05', 'JUNHO': '06', 'JULHO': '07', 'AGOSTO': '08',
+          'SETEMBRO': '09', 'OUTUBRO': '10', 'NOVEMBRO': '11', 'DEZEMBRO': '12'
+        };
+        const mNum = monthNumMap[mName] || '01';
+        const paymentDateStr = `${selectedYear}-${mNum}-06`;
+        const isPaid = todayStr >= paymentDateStr;
+        if (isPaid && sum > 0) {
+          zenklubAnnualSum += sum;
+        }
+      }
+    });
+
+    const nonZenklubPaid = yearInvoices.reduce((sum, inv) => sum + inv.paidValue, 0);
+
+    return nonZenklubPaid + zenklubAnnualSum;
+  };
+
+  const annualBruto = getAnnualMetrics();
+  const annualLiquido = annualBruto - annualRepasses;
+
+  const getPreviousMonthName = (): string => {
+    if (!selectedMonth) return '';
+    const months = [
+      'DEZEMBRO', 'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL',
+      'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO'
+    ];
     const monthNumMap: Record<string, number> = {
       'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
       'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
       'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
     };
-    const currMonthIndex = monthNumMap[selectedMonth] || 1;
-    let prevMonthIndex = currMonthIndex - 1;
-    let prevYear = selectedYear;
-    if (prevMonthIndex === 0) {
-      prevMonthIndex = 12;
-      prevYear = selectedYear - 1;
-    }
-    const prevMonthStr = String(prevMonthIndex).padStart(2, '0');
-    const currMonthStr = String(currMonthIndex).padStart(2, '0');
-    
-    const startStr = `${prevYear}-${prevMonthStr}-24`;
-    const endStr = `${selectedYear}-${currMonthStr}-23`;
-
-    const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
-    const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
-
-    const zenklubCycleSessions = allSessions.filter(s => {
-      return zenklubPatientNames.has(s.patientName) && s.date >= startStr && s.date <= endStr;
-    });
-
-    return zenklubCycleSessions.reduce((sum, s) => {
-      const p = patients.find(pat => pat.name === s.patientName);
-      const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 0);
-      return sum + rate;
-    }, 0);
+    const M = monthNumMap[selectedMonth] || 1;
+    return months[M - 1];
   };
-  const zenklubTotalFaturado = getZenklubTotalFaturado();
+
+  const previousMonthName = getPreviousMonthName();
 
   // Saldo a receber de segunda a sexta da semana atual
   const getWeekSessionsToReceive = () => {
     const today = new Date();
     const day = today.getDay();
-    const monday = new Date(today);
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    monday.setDate(today.getDate() + diffToMonday);
-    monday.setHours(0, 0, 0, 0);
+    const saturdayStart = new Date(today);
 
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
-    friday.setHours(23, 59, 59, 999);
+    let diffToSaturday = 0;
+    if (day === 6) {
+      diffToSaturday = 0;
+    } else if (day === 0) {
+      diffToSaturday = -1;
+    } else {
+      diffToSaturday = -(day + 1);
+    }
+
+    saturdayStart.setDate(today.getDate() + diffToSaturday);
+    saturdayStart.setHours(0, 0, 0, 0);
+
+    const saturdayEnd = new Date(saturdayStart);
+    saturdayEnd.setDate(saturdayStart.getDate() + 7);
+    saturdayEnd.setHours(23, 59, 59, 999);
 
     const formatDate = (d: Date) => {
       const y = d.getFullYear();
@@ -1242,21 +1747,74 @@ export default function App() {
       return `${y}-${m}-${dayStr}`;
     };
 
-    const monStr = formatDate(monday);
-    const friStr = formatDate(friday);
+    const startStr = formatDate(saturdayStart);
+    const endStr = formatDate(saturdayEnd);
 
-    const weekSess = allSessions.filter(s => s.date >= monStr && s.date <= friStr);
+    const zenklubPatientsLocal = patients.filter(p => p.origin === 'zenklub');
+    const zenklubPatientNamesLocal = new Set(zenklubPatientsLocal.map(p => p.name));
 
-    return weekSess.map(s => {
+    const monthNumMap: Record<string, number> = {
+      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
+      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
+      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
+    };
+
+    const currentYear = today.getFullYear();
+    const M = monthNumMap[selectedMonth] || 1;
+
+    // Calcular prefixo do mês anterior
+    let prevM = M - 1;
+    let prevYear = currentYear;
+    if (prevM === 0) {
+      prevM = 12;
+      prevYear = currentYear - 1;
+    }
+    const prevMonthPrefix = `${prevYear}-${String(prevM).padStart(2, '0')}`;
+    const currentMonthPrefix = `${currentYear}-${String(M).padStart(2, '0')}`;
+
+    // Filtrar sessões alvo
+    const targetSessions = allSessions.filter(s => {
+      // Excluir Zenklub
+      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && zenklubPatientNamesLocal.has(s.patientName));
+      if (isZenklub) return false;
+
+      // Excluir sessões canceladas não cobradas
+      if (s.isCancelled && !s.isCharged) return false;
+
+      // Apenas sessões não pagas e não pacote
+      if (s.isPaid === true) return false;
+      if (s.isPackage) return false;
+
+      // Mes anterior completo
+      const isPrevMonth = s.date.startsWith(prevMonthPrefix);
+
+      // Semana do mes vigente (sabado a sabado)
+      const isWeekVigente = s.date >= startStr && s.date <= endStr && s.date.startsWith(currentMonthPrefix);
+
+      return isPrevMonth || isWeekVigente;
+    });
+
+    const items: { id?: string; patientName: string; date: string; value: number; type: 'vigente' | 'anterior' }[] = [];
+
+    targetSessions.forEach(s => {
       const p = patients.find(pat => pat.name === s.patientName);
       const rate = p ? p.defaultRate : (Number(s.paymentInfo) || 150);
-      return {
+      const value = s.sessionValue !== undefined ? s.sessionValue : rate;
+
+      const sMonth = Number(s.date.split('-')[1]);
+      const type: 'vigente' | 'anterior' = (sMonth === M) ? 'vigente' : 'anterior';
+
+      items.push({
         id: s.id,
         patientName: s.patientName,
         date: s.date,
-        value: rate
-      };
-    }).sort((a, b) => a.date.localeCompare(b.date));
+        value,
+        type
+      });
+    });
+
+    const sortedItems = items.sort((a, b) => a.date.localeCompare(b.date));
+    return sortedItems;
   };
 
   const weekSessionsToReceive = getWeekSessionsToReceive();
@@ -1276,10 +1834,10 @@ export default function App() {
         <div className="card" style={{ width: '100%', maxWidth: '440px', padding: '2.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', boxShadow: 'var(--shadow-glow)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
           <div>
             <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>🧠</span>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, background: 'var(--accent-primary-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Analisandos Core</h1>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, background: 'var(--accent-primary-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Analisandos Tau</h1>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Prontuário e Controle Clínico-Financeiro Psicanalítico</p>
           </div>
-          
+
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6', margin: 0 }}>
             Efetue login com sua conta do Google para acessar seus analisandos, histórico financeiro e ativar a sincronização automática de atendimentos no Google Agenda.
           </p>
@@ -1310,18 +1868,18 @@ export default function App() {
       <header className="header-banner">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h1 className="header-title">Analisandos Core</h1>
+            <h1 className="header-title">Analisandos Tau</h1>
             <p className="header-subtitle">Prontuário e Controle Clínico-Financeiro Psicanalítico</p>
           </div>
           {databaseSeeded && (
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(255,255,255,0.1)', padding: '0.25rem 0.5rem', borderRadius: '10px' }}>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.5rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', marginRight: '0.25rem' }}>Período:</span>
-                <select className="filter-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ minWidth: '90px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem' }}>
+                <select className="filter-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ minWidth: '90px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
                   <option value="2025" style={{ color: 'black' }}>2025</option>
                   <option value="2026" style={{ color: 'black' }}>2026</option>
                 </select>
-                <select className="filter-select" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ minWidth: '120px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem' }}>
+                <select className="filter-select" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ minWidth: '120px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
                   <option value="" style={{ color: 'black' }}>Ano Inteiro</option>
                   <option value="JANEIRO" style={{ color: 'black' }}>Janeiro</option>
                   <option value="FEVEREIRO" style={{ color: 'black' }}>Fevereiro</option>
@@ -1337,12 +1895,35 @@ export default function App() {
                   <option value="DEZEMBRO" style={{ color: 'black' }}>Dezembro</option>
                 </select>
               </div>
-              <Button variant="primary" onClick={() => handleOpenPatientModal()}>
-                + Novo Analisando
+              <Button variant="primary" onClick={() => handleOpenPatientModal()} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Plus size={16} /> Novo Analisando
               </Button>
-              <Button variant="success" onClick={() => handleOpenSessionModal()}>
-                + Registrar Sessão
+              <Button variant="success" onClick={() => handleOpenSessionModal()} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Plus size={16} /> Registrar Sessão
               </Button>
+              <button
+                type="button"
+                onClick={() => setHideValues(prev => !prev)}
+                style={{
+                  background: hideValues ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${hideValues ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)'}`,
+                  color: hideValues ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.8)',
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  transition: 'var(--transition-smooth)',
+                  fontFamily: 'inherit'
+                }}
+                title={hideValues ? "Exibir valores financeiros" : "Ocultar valores financeiros"}
+              >
+                {hideValues ? <Eye size={14} /> : <EyeOff size={14} />}
+                {hideValues ? 'Exibir Valores' : ''}
+              </button>
               {user && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.75rem 0.25rem 0.25rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
                   {user.photoURL ? (
@@ -1363,10 +1944,13 @@ export default function App() {
                       fontWeight: 'bold',
                       cursor: 'pointer',
                       padding: '0.25rem 0.5rem',
-                      borderRadius: '10px'
+                      borderRadius: '10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.2rem'
                     }}
                   >
-                    Sair
+                    Sair <LogOut size={12} />
                   </button>
                 </div>
               )}
@@ -1403,9 +1987,7 @@ export default function App() {
                   if (seeded) {
                     loadPatientsData();
                     loadInvoicesData();
-                    loadSessionsData();
-                    loadRentData();
-                  }
+                                      }
                 });
               }}
               style={{ marginTop: '1rem' }}
@@ -1419,23 +2001,17 @@ export default function App() {
         {databaseSeeded === true && (
           <>
             <nav className="tab-navigation">
-              <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-                📊 Dashboard
+              <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <LayoutDashboard size={16} /> Dashboard
               </button>
-              <button className={`tab-btn ${activeTab === 'patients' ? 'active' : ''}`} onClick={() => setActiveTab('patients')}>
-                👥 Analisandos ({patients.length})
+              <button className={`tab-btn ${activeTab === 'patients' ? 'active' : ''}`} onClick={() => setActiveTab('patients')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Users size={16} /> Analisandos ({patients.length})
               </button>
-              <button className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
-                🗓️ Sessões
+              <button className={`tab-btn ${activeTab === 'invoices' ? 'active' : ''}`} onClick={() => setActiveTab('invoices')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Banknote size={16} /> Faturamento
               </button>
-              <button className={`tab-btn ${activeTab === 'invoices' ? 'active' : ''}`} onClick={() => setActiveTab('invoices')}>
-                💰 Faturamento
-              </button>
-              <button className={`tab-btn ${activeTab === 'rent' ? 'active' : ''}`} onClick={() => setActiveTab('rent')}>
-                🏢 Aluguel
-              </button>
-              <button className={`tab-btn ${activeTab === 'transfers' ? 'active' : ''}`} onClick={() => setActiveTab('transfers')}>
-                💸 Repasses
+              <button className={`tab-btn ${activeTab === 'transfers' ? 'active' : ''}`} onClick={() => setActiveTab('transfers')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Landmark size={16} /> Repasses
               </button>
             </nav>
 
@@ -1450,7 +2026,7 @@ export default function App() {
             {activeTab === 'dashboard' && (
               <DashboardTab
                 totalMetrics={totalMetrics}
-                rentTotalPaid={rentTotalPaid}
+                rentTotalPaid={presencialTotalRentPaid}
                 patients={patients}
                 upcomingSessions={upcomingSessions}
                 loadingUpcomingSessions={loadingUpcomingSessions}
@@ -1459,6 +2035,26 @@ export default function App() {
                 weekSessionsToReceive={weekSessionsToReceive}
                 weekSessionsTotal={weekSessionsTotal}
                 formatCurrency={formatCurrency}
+                zenklubSessionsForDetail={zenklubSessionsForDetail}
+                zenklubCyclePeriodLabel={zenklubCyclePeriodLabel}
+                selectedMonth={selectedMonth}
+                previousMonthName={previousMonthName}
+                salarioLiquidoPrevisto={salarioLiquidoPrevisto}
+                salarioLiquidoRecebido={salarioLiquidoRecebido}
+                salaryTotalRepasses={salaryTotalRepasses}
+                annualBruto={annualBruto}
+                annualLiquido={annualLiquido}
+                salaryMonth={salaryMonth}
+                selectedYear={selectedYear}
+                sessions={allSessions}
+                displayInvoices={displayInvoices.filter(inv => inv.id !== 'virtual-zenklub-invoice')}
+                onSelectPatientByName={(name) => {
+                  const pat = patients.find(p => p.name === name);
+                  if (pat) {
+                    setSelectedPatientForDashboard(pat);
+                    setActiveTab('patients');
+                  }
+                }}
               />
             )}
 
@@ -1475,20 +2071,27 @@ export default function App() {
                   setGeneralPhoneText={setGeneralPhoneText}
                   generalEmailText={generalEmailText}
                   setGeneralEmailText={setGeneralEmailText}
+                  generalDefaultRate={generalDefaultRate}
+                  setGeneralDefaultRate={setGeneralDefaultRate}
                   generalNotesText={generalNotesText}
                   setGeneralNotesText={setGeneralNotesText}
+                  generalOriginText={generalOriginText}
+                  setGeneralOriginText={setGeneralOriginText}
                   handleSaveGeneralPatientDetails={handleSaveGeneralPatientDetails}
                   savingNotes={savingNotes}
-                  selectedSessionForNotes={selectedSessionForNotes}
-                  setSelectedSessionForNotes={setSelectedSessionForNotes}
-                  sessionNotesText={sessionNotesText}
-                  setSessionNotesText={setSessionNotesText}
-                  handleSaveSessionNotes={handleSaveSessionNotes}
                   handleOpenSessionModal={handleOpenSessionModal}
                   handleDeleteSession={handleDeleteSession}
                   formatCurrency={formatCurrency}
                   handleUpdatePatientReadjustments={handleUpdatePatientReadjustments}
                   handleToggleSessionPaymentStatus={handleToggleSessionPaymentStatus}
+                  handleToggleSessionCancellation={handleToggleSessionCancellation}
+                  handleToggleSessionCharge={handleToggleSessionCharge}
+                  handleUpdateSessionValue={handleUpdateSessionValue}
+                  handleUpdateSessionNotes={handleUpdateSessionNotes}
+                  handleUpdateSessionDate={handleUpdateSessionDate}
+                  handleUpdateSessionModality={handleUpdateSessionModality}
+                  handleUpdateSessionPatientType={handleUpdateSessionPatientType}
+                  showConfirm={showConfirm}
                 />
               ) : (
                 <PatientsTab
@@ -1505,24 +2108,7 @@ export default function App() {
               )
             )}
 
-            {/* ABA 3: SESSÕES */}
-            {activeTab === 'sessions' && (
-              <SessionsTab
-                selectedMonth={selectedMonth}
-                googleAccessToken={googleAccessToken}
-                handleSyncFromGoogleCalendar={handleSyncFromGoogleCalendar}
-                syncingGoogleCalendar={syncingGoogleCalendar}
-                handleOpenSessionModal={handleOpenSessionModal}
-                sessionFilters={sessionFilters}
-                setSessionFilters={setSessionFilters}
-                sessions={sessions}
-                loadingSessions={loadingSessions}
-                handleDeleteSession={handleDeleteSession}
-                hasMoreSessions={hasMoreSessions}
-                loadSessionsData={loadSessionsData}
-                lastSessionDoc={lastSessionDoc}
-              />
-            )}
+            
 
             {/* ABA 4: FATURAMENTO */}
             {activeTab === 'invoices' && (
@@ -1531,8 +2117,9 @@ export default function App() {
                 invoiceFilters={invoiceFilters}
                 setInvoiceFilters={setInvoiceFilters}
                 totalMetrics={totalMetrics}
-                invoices={invoices}
+                invoices={displayInvoices.filter(inv => inv.id !== 'virtual-zenklub-invoice')}
                 sessions={allSessions}
+                patients={patients}
                 loadingInvoices={loadingInvoices}
                 handleQuickPayInvoice={handleQuickPayInvoice}
                 handleDeleteInvoice={handleDeleteInvoice}
@@ -1543,14 +2130,6 @@ export default function App() {
               />
             )}
 
-            {/* ABA 5: ALUGUEL */}
-            {activeTab === 'rent' && (
-              <RentTab
-                rentLogs={rentLogs}
-                loadingRent={loadingRent}
-                formatCurrency={formatCurrency}
-              />
-            )}
 
             {/* ABA 6: REPASSES & SUPERVISÃO */}
             {activeTab === 'transfers' && (
@@ -1564,6 +2143,10 @@ export default function App() {
                 presencialTotalSessions={presencialTotalSessions}
                 presencialTotalNet={presencialTotalNet}
                 presencialRows={presencialRows}
+                privateRows={privateRows}
+                privateTotalSessions={privateTotalSessions}
+                privateTotalSupervision={privateTotalSupervision}
+                privateTotalNet={privateTotalNet}
                 numSupervisions={numSupervisions}
                 setNumSupervisions={setNumSupervisions}
                 costPerSupervision={costPerSupervision}
@@ -1575,6 +2158,8 @@ export default function App() {
                 suggestedSavePerPatientMonthly={suggestedSavePerPatientMonthly}
                 suggestedSavePerSessionAssumingFour={suggestedSavePerSessionAssumingFour}
                 formatCurrency={formatCurrency}
+                onToggleRentCancelled={handleToggleSessionRentCancelled}
+                onToggleRentPaid={handleToggleSessionRentPaid}
               />
             )}
           </>
@@ -1612,6 +2197,17 @@ export default function App() {
         setInvoiceForm={setInvoiceForm as any}
         patients={patients}
         isEditing={!!editingInvoice}
+      />
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        isAlert={confirmModal.isAlert}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={confirmModal.onCancel || (() => setConfirmModal(prev => ({ ...prev, isOpen: false })))}
       />
     </div>
   );
