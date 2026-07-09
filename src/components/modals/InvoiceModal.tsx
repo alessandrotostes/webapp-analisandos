@@ -58,7 +58,7 @@ export function InvoiceModal({
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="responsive-modal-grid">
             <div className="filter-group">
               <label className="filter-label">Ano Referência</label>
               <input
@@ -93,7 +93,7 @@ export function InvoiceModal({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="responsive-modal-grid">
             <div className="filter-group">
               <label className="filter-label">Nº Fatura</label>
               <input
@@ -116,7 +116,7 @@ export function InvoiceModal({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="responsive-modal-grid">
             <div className="filter-group">
               <label className="filter-label">Valor Cobrado (R$)</label>
               <input

@@ -96,12 +96,13 @@ export function InvoicesTab({
         <Table
           columns={[
             { header: 'Nº Fatura', accessor: (inv: Invoice) => `#${inv.invoiceNumber}`, align: 'center' },
-            { header: 'Referência', accessor: (inv: Invoice) => `${inv.month} / ${inv.year}` },
+            { header: 'Referência', accessor: (inv: Invoice) => `${inv.month} / ${inv.year}`, className: 'hide-mobile' },
             { header: 'Paciente', accessor: (inv: Invoice) => inv.patientName },
             { header: 'Valor Previsto', accessor: (inv: Invoice) => formatCurrency(inv.value), align: 'right' },
             { header: 'Total Pago', accessor: (inv: Invoice) => formatCurrency(inv.paidValue), align: 'right' },
             {
               header: 'Pendente',
+              className: 'hide-mobile',
               accessor: (inv: Invoice) => {
                 // Calcular data da segunda e sexta-feira da semana atual
                 const today = new Date();

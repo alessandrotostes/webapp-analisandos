@@ -4,6 +4,7 @@ interface Column<T> {
   header: string;
   accessor: (item: T) => React.ReactNode;
   align?: 'left' | 'center' | 'right';
+  className?: string;
 }
 
 interface TableProps<T> {
@@ -21,6 +22,7 @@ export function Table<T>({ columns, data, loading }: TableProps<T>) {
             {columns.map((col, index) => (
               <th
                 key={index}
+                className={col.className}
                 style={{ textAlign: col.align || 'left' }}
               >
                 {col.header}
@@ -47,6 +49,7 @@ export function Table<T>({ columns, data, loading }: TableProps<T>) {
                 {columns.map((col, colIndex) => (
                   <td
                     key={colIndex}
+                    className={col.className}
                     style={{ textAlign: col.align || 'left' }}
                   >
                     {col.accessor(item)}

@@ -54,7 +54,7 @@ export function TransfersTab({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
         
         {/* CARD 1: INTEGRANDO SER (MÊS VIGENTE) */}
         <Card title={`1. Repasse Integrando Ser (25%)`}>

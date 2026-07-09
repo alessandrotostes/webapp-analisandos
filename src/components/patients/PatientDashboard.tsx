@@ -771,7 +771,7 @@ export function PatientDashboard({
       </div>
 
       {/* Seção Superior: Histórico de Sessões & Evolução do Atendimento (O mais importante primeiro) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
         {/* Card: Histórico de Sessões */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
@@ -857,13 +857,13 @@ export function PatientDashboard({
       </div>
 
       {/* Seção Inferior: Ficha Cadastral & Histórico de Reajustes (na parte de baixo da pagina) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '1.5rem' }}>
         
         {/* Card: Ficha do Analisando */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', minHeight: 'auto' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.35rem', margin: 0 }}>Ficha do Analisando</h3>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+          <div className="responsive-form-grid">
             <div className="filter-group">
               <label className="filter-label" style={{ fontSize: '0.7rem' }}>Telefone</label>
               <input

@@ -803,4 +803,86 @@ textarea.filter-input {
   .login-screen {
     padding: 1rem;
   }
+
+  /* Responsive helper for tables */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* Responsive card heights */
+  .dashboard-bottom-grid .card {
+    height: auto !important;
+    max-height: 500px;
+  }
+
+  /* Responsive form layouts */
+  .responsive-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Responsive modal grids */
+  .responsive-modal-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  /* Responsive Summary Bar */
+  .dashboard-summary-bar {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.75rem !important;
+  }
+  .dashboard-summary-bar > div {
+    width: 100%;
+    justify-content: space-between;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .dashboard-summary-bar span.divider {
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+}
+
+/* --- Base styles for new responsive utilities --- */
+.responsive-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.responsive-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.dashboard-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+  background: var(--bg-surface);
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+  border-radius: 10px;
+}
+
+.dashboard-summary-bar > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dashboard-summary-bar span.divider {
+  border-left: 1px solid var(--border-color);
+  padding-left: 1rem;
+  margin-left: 1rem;
 }

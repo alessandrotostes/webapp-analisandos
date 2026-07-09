@@ -139,40 +139,27 @@ export function DashboardTab({
   return (
     <div>
       {/* Acumulado do Ano e Salário Líquido (Tamanho Pequeno) */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: '1.5rem',
-        marginBottom: '1.25rem',
-        background: 'var(--bg-surface)',
-        padding: '0.6rem 1rem',
-        borderRadius: '10px',
-        border: '1px solid var(--border-color)',
-        fontSize: '0.8rem',
-        color: 'var(--text-secondary)',
-        flexWrap: 'wrap'
-      }}>
+      <div className="dashboard-summary-bar">
         <div>
           <span style={{ fontWeight: '600' }}>Acumulado (Jan a {salaryMonth.toLowerCase()}/{selectedYear}):</span>
           <span style={{ marginLeft: '0.5rem' }}>Bruto: <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(annualBruto)}</strong></span>
-          <span style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '1rem', marginLeft: '1rem' }}>
+          <span className="divider">
             Líquido: <strong style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>{formatCurrency(annualLiquido)}</strong>
           </span>
         </div>
         <div>
           <span style={{ fontWeight: '600' }}>Salário Líquido ({salaryMonth.toLowerCase()}):</span>
           <span style={{ marginLeft: '0.5rem' }}>Previsto: <strong style={{ color: 'var(--accent-primary)' }}>{formatCurrency(salarioLiquidoPrevisto)}</strong></span>
-          <span style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '1rem', marginLeft: '1rem' }}>
+          <span className="divider">
             Pago: <strong style={{ color: 'var(--accent-success)' }}>{formatCurrency(salarioLiquidoRecebido)}</strong>
           </span>
-          <span style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '1rem', marginLeft: '1rem' }}>
+          <span className="divider">
             Despesas/Repasses: <strong style={{ color: 'var(--text-secondary)' }}>{formatCurrency(salaryTotalRepasses)}</strong>
           </span>
         </div>
       </div>
 
-      <section className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+      <section className="dashboard-grid">
         <div onClick={() => setShowPrevistaModal(true)} style={{ cursor: 'pointer' }} title="Clique para ver detalhamento de receita prevista">
           <Card title="Receita Prevista (Filtro)">
             <div className="card-value">{formatCurrency(totalMetrics.faturado)}</div>

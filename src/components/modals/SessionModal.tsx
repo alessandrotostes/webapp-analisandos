@@ -88,7 +88,7 @@ export function SessionModal({
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="responsive-modal-grid">
             <div className="filter-group">
               <label className="filter-label">Valor da Sessão (R$)</label>
               <input
