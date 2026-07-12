@@ -747,6 +747,13 @@ textarea.filter-input {
     box-sizing: border-box;
   }
 
+  input[type="date"].filter-input {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
   .btn {
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
