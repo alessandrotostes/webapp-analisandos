@@ -37,3 +37,6 @@ firebase.json
 firestore.rules
 firestore.indexes.json
 .firebase/
+
+# Security Context
+.context/security/
