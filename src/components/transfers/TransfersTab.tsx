@@ -1,6 +1,7 @@
 import { Card } from '../ui/Card';
 
 interface TransfersTabProps {
+  hideValues?: boolean;
   selectedMonth: string;
   integrandoTotalRepasse: number;
   integrandoTotalSessions: number;
@@ -30,6 +31,7 @@ interface TransfersTabProps {
 }
 
 export function TransfersTab({
+  hideValues,
   selectedMonth,
   integrandoTotalRepasse,
   integrandoTotalSessions,
@@ -74,7 +76,7 @@ export function TransfersTab({
                 integrandoRows.map((r, idx) => (
                   <div key={idx} style={{ padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-main)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', borderBottom: '1px dashed var(--border-color)', paddingBottom: '0.4rem' }}>
-                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{r.name}</strong>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{hideValues && r.name !== 'ZENKLUB' ? 'Analisando Oculto' : r.name}</strong>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>Total: {formatCurrency(r.repasse)}</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -110,7 +112,7 @@ export function TransfersTab({
                 presencialRows.map((r, idx) => (
                   <div key={idx} style={{ padding: '0.85rem', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-main)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', borderBottom: '1px dashed var(--border-color)', paddingBottom: '0.4rem' }}>
-                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{r.name}</strong>
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{hideValues && r.name !== 'ZENKLUB' ? 'Analisando Oculto' : r.name}</strong>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>Total: {formatCurrency(r.rent)}</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -217,7 +219,7 @@ export function TransfersTab({
               ) : (
                 privateRows.map((r, idx) => (
                   <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--text-primary)' }}>{r.name}</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{hideValues && r.name !== 'ZENKLUB' ? 'Analisando Oculto' : r.name}</span>
                     <span style={{ color: 'var(--text-muted)' }}>{r.sessionsCount} sessões</span>
                   </div>
                 ))

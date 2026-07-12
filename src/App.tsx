@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  isDatabaseSeeded,
   getPatients,
   addPatient,
   updatePatient,
@@ -23,7 +22,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from './config/firebase-config';
@@ -67,7 +68,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('active_tab', activeTab);
   }, [activeTab]);
-  const [databaseSeeded, setDatabaseSeeded] = useState<boolean | null>(null);
 
   // States de Autenticação e Google Agenda
   const [user, setUser] = useState<User | null>(null);
@@ -76,7 +76,19 @@ export default function App() {
 
   // Monitoramento de estado de login
   useEffect(() => {
+    // Garante a persistência no PWA/Mobile
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
+
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      if (usr && usr.email !== 'tauanapavanelli@gmail.com') {
+        signOut(auth);
+        setUser(null);
+        localStorage.removeItem('google_access_token');
+        setGoogleAccessToken(null);
+        setCheckingAuth(false);
+        return;
+      }
+      
       setUser(usr);
       setCheckingAuth(false);
       if (!usr) {
@@ -92,18 +104,21 @@ export default function App() {
     provider.addScope('https://www.googleapis.com/auth/calendar.events');
 
     try {
+      await setPersistence(auth, browserLocalPersistence);
       const result = await signInWithPopup(auth, provider);
+      
+      if (result.user.email !== 'tauanapavanelli@gmail.com') {
+        await signOut(auth);
+        setErrorMsg("Acesso negado. Usuário não autorizado.");
+        return;
+      }
+
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const token = credential?.accessToken;
       if (token) {
         localStorage.setItem('google_access_token', token);
         setGoogleAccessToken(token);
       }
-      showConfirm(
-        `Olá, ${result.user.displayName}! Login efetuado e Google Agenda conectado com sucesso!`,
-        () => {},
-        { isAlert: true, title: 'Sucesso' }
-      );
     } catch (err: any) {
       setErrorMsg("Erro ao fazer login com o Google: " + err.message);
     }
@@ -430,10 +445,10 @@ export default function App() {
   }, [selectedYear]);
 
   useEffect(() => {
-    if (databaseSeeded) {
+    if (user) {
       loadAllSessionsForSelectedMonth();
     }
-  }, [databaseSeeded, loadAllSessionsForSelectedMonth]);
+  }, [user, loadAllSessionsForSelectedMonth]);
 
   const loadPatientDashboardSessions = useCallback(async (patientName: string) => {
     setLoadingDashboardSessions(true);
@@ -594,32 +609,20 @@ export default function App() {
   }, [selectedYear, selectedMonth, invoiceFilters.patientName, patients, invoicePageSize]);
 
   
-  // Verifica se o DB já possui dados no carregamento inicial
+  // Inicializa dados
   useEffect(() => {
-    isDatabaseSeeded()
-      .then((seeded) => {
-        setDatabaseSeeded(seeded);
-      })
-      .catch((err) => {
-        console.error("Erro na verificação de seed:", err);
-        setDatabaseSeeded(false);
-      });
-  }, []);
-
-  // Inicializa dados e escuta mudanças no seed
-  useEffect(() => {
-    if (databaseSeeded) {
+    if (user) {
       loadPatientsData();
       loadUpcomingSessionsData();
     }
-  }, [databaseSeeded, loadPatientsData, loadUpcomingSessionsData]);
+  }, [user, loadPatientsData, loadUpcomingSessionsData]);
 
   // Recarrega dados com alterações nos filtros
   useEffect(() => {
-    if (databaseSeeded) {
+    if (user) {
       loadInvoicesData(false, null);
     }
-  }, [selectedYear, selectedMonth, invoiceFilters.patientName, databaseSeeded, loadInvoicesData]);
+  }, [user, selectedYear, selectedMonth, invoiceFilters.patientName, loadInvoicesData]);
 
 
 
@@ -1833,13 +1836,13 @@ export default function App() {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent), var(--bg-main)', padding: '2rem' }}>
         <div className="card" style={{ width: '100%', maxWidth: '440px', padding: '2.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', boxShadow: 'var(--shadow-glow)', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
           <div>
-            <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>🧠</span>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, background: 'var(--accent-primary-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Analisandos Tau</h1>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Prontuário e Controle Clínico-Financeiro Psicanalítico</p>
+            <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>🔒</span>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, background: 'var(--accent-primary-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Sistema de Gestão</h1>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Acesso Restrito</p>
           </div>
 
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6', margin: 0 }}>
-            Efetue login com sua conta do Google para acessar seus analisandos, histórico financeiro e ativar a sincronização automática de atendimentos no Google Agenda.
+            Efetue login com sua conta autorizada para acessar o sistema.
           </p>
 
           {errorMsg && (
@@ -1868,10 +1871,9 @@ export default function App() {
       <header className="header-banner">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h1 className="header-title">Analisandos Tau</h1>
-            <p className="header-subtitle">Prontuário e Controle Clínico-Financeiro Psicanalítico</p>
+            <h1 className="header-title">Sistema de Gestão</h1>
+            <p className="header-subtitle">Controle Clínico e Financeiro</p>
           </div>
-          {databaseSeeded && (
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.5rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', marginRight: '0.25rem' }}>Período:</span>
@@ -1931,9 +1933,31 @@ export default function App() {
                   ) : (
                     <span style={{ fontSize: '1.2rem', padding: '0.2rem' }}>👤</span>
                   )}
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>
                     {user.displayName?.split(' ')[0]}
                   </span>
+                  {!googleAccessToken && (
+                    <button
+                      onClick={handleLoginWithGoogle}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.2)',
+                        border: '1px solid var(--accent-primary)',
+                        color: 'var(--accent-primary)',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '10px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.2rem',
+                        marginRight: '0.5rem'
+                      }}
+                      title="Seu token do Google Agenda expirou. Clique para reconectar."
+                    >
+                      Reconectar Agenda
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
                     style={{
@@ -1955,51 +1979,11 @@ export default function App() {
                 </div>
               )}
             </div>
-          )}
         </div>
       </header>
 
       <div className="container">
-        {/* Aviso de Carga Inicial (Seed) */}
-        {databaseSeeded === false && (
-          <div className="card" style={{ borderLeft: '5px solid var(--accent-warning)', marginBottom: '2rem' }}>
-            <h3 style={{ color: 'var(--accent-warning)', marginBottom: '0.5rem' }}>⚠️ Banco de dados em branco</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-              Para popular o seu banco de dados Cloud Firestore no Firebase com o histórico completo das planilhas
-              (61 pacientes, faturas, aluguel de consultório e 1074 sessões), execute o seguinte comando na pasta raiz do projeto:
-            </p>
-            <pre style={{
-              background: 'var(--bg-main)',
-              padding: '0.75rem 1rem',
-              borderRadius: '8px',
-              marginTop: '0.75rem',
-              border: '1px solid var(--border-color)',
-              color: 'var(--accent-primary)',
-              fontFamily: 'monospace'
-            }}>
-              yarn seed
-            </pre>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                isDatabaseSeeded().then((seeded) => {
-                  setDatabaseSeeded(seeded);
-                  if (seeded) {
-                    loadPatientsData();
-                    loadInvoicesData();
-                                      }
-                });
-              }}
-              style={{ marginTop: '1rem' }}
-            >
-              Confirmar Sincronização
-            </Button>
-          </div>
-        )}
-
         {/* Sistema de Abas (Tabs) */}
-        {databaseSeeded === true && (
-          <>
             <nav className="tab-navigation">
               <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                 <LayoutDashboard size={16} /> Dashboard
@@ -2025,6 +2009,7 @@ export default function App() {
             {/* ABA 1: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <DashboardTab
+                hideValues={hideValues}
                 totalMetrics={totalMetrics}
                 rentTotalPaid={presencialTotalRentPaid}
                 patients={patients}
@@ -2062,6 +2047,7 @@ export default function App() {
             {activeTab === 'patients' && (
               selectedPatientForDashboard ? (
                 <PatientDashboard
+                  hideValues={hideValues}
                   selectedPatient={selectedPatientForDashboard}
                   onBack={() => setSelectedPatientForDashboard(null)}
                   patientDashboardSessions={patientDashboardSessions}
@@ -2095,6 +2081,7 @@ export default function App() {
                 />
               ) : (
                 <PatientsTab
+                  hideValues={hideValues}
                   patients={patients}
                   loadingPatients={loadingPatients}
                   patientStatusFilterTab={patientStatusFilterTab}
@@ -2113,6 +2100,7 @@ export default function App() {
             {/* ABA 4: FATURAMENTO */}
             {activeTab === 'invoices' && (
               <InvoicesTab
+                hideValues={hideValues}
                 handleOpenInvoiceModal={handleOpenInvoiceModal}
                 invoiceFilters={invoiceFilters}
                 setInvoiceFilters={setInvoiceFilters}
@@ -2134,6 +2122,7 @@ export default function App() {
             {/* ABA 6: REPASSES & SUPERVISÃO */}
             {activeTab === 'transfers' && (
               <TransfersTab
+                hideValues={hideValues}
                 selectedMonth={selectedMonth}
                 integrandoTotalRepasse={integrandoTotalRepasse}
                 integrandoTotalSessions={integrandoTotalSessions}
@@ -2162,8 +2151,6 @@ export default function App() {
                 onToggleRentPaid={handleToggleSessionRentPaid}
               />
             )}
-          </>
-        )}
       </div>
 
       {/* ==========================================

@@ -3,6 +3,7 @@ import type { Patient } from '../../types';
 import { Button } from '../ui/Button';
 
 interface PatientsTabProps {
+  hideValues?: boolean;
   patients: Patient[];
   loadingPatients: boolean;
   patientStatusFilterTab: 'active' | 'paused' | 'ended';
@@ -15,6 +16,7 @@ interface PatientsTabProps {
 }
 
 export function PatientsTab({
+  hideValues,
   patients,
   loadingPatients,
   patientStatusFilterTab,
@@ -127,7 +129,7 @@ export function PatientsTab({
             <div key={p.id} className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', gap: '0.5rem' }}>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</h3>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hideValues ? 'Analisando Oculto' : p.name}</h3>
                   <span className={`badge ${p.status === 'active' ? 'badge-paid' : p.status === 'paused' ? 'badge-pending' : 'badge-unpaid'}`}>
                     {p.status === 'active' ? 'Ativo' : p.status === 'paused' ? 'Pausado' : 'Encerrado'}
                   </span>

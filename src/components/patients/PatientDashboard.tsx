@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 import { Edit2 } from 'lucide-react';
 
 interface PatientDashboardProps {
+  hideValues?: boolean;
   selectedPatient: Patient;
   onBack: () => void;
   patientDashboardSessions: Session[];
@@ -48,6 +49,7 @@ interface PatientDashboardProps {
 }
 
 export function PatientDashboard({
+  hideValues,
   selectedPatient,
   onBack,
   patientDashboardSessions,
@@ -726,7 +728,7 @@ export function PatientDashboard({
             ← Voltar para Lista
           </Button>
           <div>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>Prontuário: {selectedPatient.name}</h2>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>Prontuário: {hideValues ? 'Analisando Oculto' : selectedPatient.name}</h2>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
               Origem: <span style={{ textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 'bold' }}>{selectedPatient.origin.replace('_', ' ')}</span>
               {' • '} Formato: <span style={{ textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 'bold' }}>{selectedPatient.format}</span>

@@ -3,6 +3,7 @@ import { Button } from '../ui/Button';
 import { Table } from '../ui/Table';
 
 interface InvoicesTabProps {
+  hideValues?: boolean;
   handleOpenInvoiceModal: (invoice?: Invoice) => void;
   invoiceFilters: { patientName: string };
   setInvoiceFilters: React.Dispatch<React.SetStateAction<{ patientName: string }>>;
@@ -20,6 +21,7 @@ interface InvoicesTabProps {
 }
 
 export function InvoicesTab({
+  hideValues,
   handleOpenInvoiceModal,
   invoiceFilters,
   setInvoiceFilters,
@@ -97,7 +99,7 @@ export function InvoicesTab({
           columns={[
             { header: 'Nº Fatura', accessor: (inv: Invoice) => `#${inv.invoiceNumber}`, align: 'center' },
             { header: 'Referência', accessor: (inv: Invoice) => `${inv.month} / ${inv.year}`, className: 'hide-mobile' },
-            { header: 'Paciente', accessor: (inv: Invoice) => inv.patientName },
+            { header: 'Paciente', accessor: (inv: Invoice) => hideValues && inv.patientName !== 'ZENKLUB' ? 'Analisando Oculto' : inv.patientName },
             { header: 'Valor Previsto', accessor: (inv: Invoice) => formatCurrency(inv.value), align: 'right' },
             { header: 'Total Pago', accessor: (inv: Invoice) => formatCurrency(inv.paidValue), align: 'right' },
             {

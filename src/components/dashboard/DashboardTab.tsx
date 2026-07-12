@@ -3,6 +3,7 @@ import { Card } from '../ui/Card';
 import type { Session, Patient, Invoice } from '../../types';
 
 interface DashboardTabProps {
+  hideValues?: boolean;
   totalMetrics: {
     faturado: number;
     recebido: number;
@@ -34,6 +35,7 @@ interface DashboardTabProps {
 }
 
 export function DashboardTab({
+  hideValues,
   totalMetrics,
   rentTotalPaid,
   patients,
@@ -87,8 +89,9 @@ export function DashboardTab({
 
   const renderPatientLink = (name: string, defaultStyle: React.CSSProperties = {}) => {
     const clickable = isPatientClickable(name);
+    const displayName = hideValues ? 'Analisando Oculto' : name;
     if (!clickable) {
-      return <strong style={{ color: 'var(--text-primary)', ...defaultStyle }}>{name}</strong>;
+      return <strong style={{ color: 'var(--text-primary)', ...defaultStyle }}>{displayName}</strong>;
     }
     return (
       <strong 
@@ -99,9 +102,9 @@ export function DashboardTab({
           textDecoration: 'underline',
           ...defaultStyle 
         }}
-        title={`Ir para o prontuário de ${name}`}
+        title={`Ir para o prontuário de ${displayName}`}
       >
-        {name}
+        {displayName}
       </strong>
     );
   };
@@ -408,7 +411,7 @@ export function DashboardTab({
                   <tbody>
                     {zenklubSessionsForDetail.map((item, idx) => (
                       <tr key={idx} style={{ borderBottom: idx < zenklubSessionsForDetail.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                        <td style={{ padding: '0.75rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.patientName}</td>
+                        <td style={{ padding: '0.75rem', color: 'var(--text-primary)' }}>{renderPatientLink(item.patientName, { fontWeight: '600' })}</td>
                         <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{item.date ? item.date.split('-').reverse().join('/') : ''}</td>
                         <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--accent-success)', fontWeight: 'bold' }}>{formatCurrency(item.value)}</td>
                       </tr>
@@ -485,7 +488,7 @@ export function DashboardTab({
                     <tbody>
                       {paidInvoices.map((item, idx) => (
                         <tr key={item.id || idx} style={{ borderBottom: idx < paidInvoices.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                          <td style={{ padding: '0.75rem', color: 'var(--text-primary)', fontWeight: '600' }}>{item.patientName}</td>
+                          <td style={{ padding: '0.75rem', color: 'var(--text-primary)' }}>{renderPatientLink(item.patientName, { fontWeight: '600' })}</td>
                           <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{item.month} / {item.year}</td>
                           <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--accent-success)', fontWeight: 'bold' }}>{formatCurrency(item.paidValue)}</td>
                         </tr>
