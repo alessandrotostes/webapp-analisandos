@@ -391,7 +391,9 @@ form .filter-group {
 form .filter-input,
 form .filter-select {
   width: 100%;
-  min-width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   margin-top: 0.25rem;
 }
 
@@ -739,8 +741,10 @@ textarea.filter-input {
 
   .filter-select,
   .filter-input {
-    min-width: 100%;
+    min-width: 0;
+    max-width: 100%;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .btn {
