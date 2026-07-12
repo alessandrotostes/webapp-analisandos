@@ -20,4 +20,4 @@
 - Dashboard com KPIs (Receita, Prevista, Pendente, Zenklub, Custos) sincronizados com Google Agenda.
 - Gestão de Prontuários e Analisandos.
 - Relatórios de Faturamento e Repasses.
-- Autenticação restrita e hardcoded para admin (tauanapavanelli@gmail.com) via Google.
+- Autenticação restrita e hardcoded para a conta de administração principal via Google.
