@@ -4,6 +4,7 @@ import {
   addPatient,
   updatePatient,
   deletePatient,
+  updatePatientNameInRelatedDocs,
   getInvoices,
   addInvoice,
   updateInvoice,
@@ -28,6 +29,7 @@ import {
 } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from './config/firebase-config';
+import { enviarTransacaoParaGastos } from './services/integrationService';
 
 // Importações dos Componentes Refatorados (Modulares e Responsivos)
 import { PatientModal } from './components/modals/PatientModal';
@@ -665,12 +667,25 @@ export default function App() {
 
     try {
       if (editingPatient?.id) {
+        // Bug fix: se o nome mudou, propagar para sessões e faturas
+        const oldName = editingPatient.name;
+        const newName = patientForm.name;
+        if (oldName !== newName) {
+          await updatePatientNameInRelatedDocs(oldName, newName);
+        }
         await updatePatient(editingPatient.id, patientForm);
+        // Atualiza também o selectedPatientForDashboard se era o paciente editado
+        if (selectedPatientForDashboard?.id === editingPatient.id) {
+          setSelectedPatientForDashboard(prev => prev ? { ...prev, ...patientForm, id: prev.id } : null);
+        }
       } else {
         await addPatient(patientForm as Patient);
       }
       setShowPatientModal(false);
+      // Bug fix: recarregar todos os dados dependentes (faturas, sessões) para atualizar dashboard e aba Faturamento
       loadPatientsData();
+      loadInvoicesData(false, null);
+      loadAllSessionsForSelectedMonth();
     } catch (err: any) {
       setErrorMsg("Erro ao salvar analisando: " + err.message);
     }
@@ -1087,6 +1102,22 @@ export default function App() {
 
             loadAllSessionsForSelectedMonth();
       loadUpcomingSessionsData();
+
+      // INTEGRAÇÃO: Se o aluguel foi marcado como pago, envia o gasto para o controle-de-gastos
+      if (newVal) {
+        const session = allSessions.find(s => s.id === sessionId);
+        if (session) {
+          enviarTransacaoParaGastos({
+            tipo: 'gasto',
+            descricao: `Aluguel Consultório - ${session.patientName}`,
+            valor: 30.00,
+            categoria: 'Aluguel Consultório',
+            metodoPagamento: 'Dinheiro',
+            pago: true,
+            data: session.date
+          });
+        }
+      }
     } catch (err: any) {
       setErrorMsg("Erro ao alterar status de pagamento do aluguel da sessão: " + err.message);
     }
@@ -1141,10 +1172,37 @@ export default function App() {
         pendingValue: Math.max(0, val - paid)
       };
 
+      const formatDate = (dateStr?: string) => {
+        if (!dateStr) return undefined;
+        return dateStr.includes('/') ? dateStr.split('/').reverse().join('-') : dateStr;
+      };
+
       if (editingInvoice?.id) {
         await updateInvoice(editingInvoice.id, completeForm);
+        
+        // INTEGRAÇÃO: Se o valor pago aumentou, envia a diferença como ganho
+        const oldPaid = editingInvoice.paidValue || 0;
+        const diff = paid - oldPaid;
+        if (diff > 0) {
+          enviarTransacaoParaGastos({
+            tipo: 'ganho',
+            descricao: `Fatura Clínica - ${completeForm.patientName} (${completeForm.month})`,
+            valor: diff,
+            data: formatDate(completeForm.date)
+          });
+        }
       } else {
         await addInvoice(completeForm as Invoice);
+        
+        // INTEGRAÇÃO: Se a nova fatura foi cadastrada com algum valor já pago
+        if (paid > 0) {
+          enviarTransacaoParaGastos({
+            tipo: 'ganho',
+            descricao: `Fatura Clínica - ${completeForm.patientName} (${completeForm.month})`,
+            valor: paid,
+            data: formatDate(completeForm.date)
+          });
+        }
       }
       setShowInvoiceModal(false);
       loadInvoicesData(false);
@@ -1161,6 +1219,22 @@ export default function App() {
         pendingValue: 0
       });
       loadInvoicesData(false);
+
+      // INTEGRAÇÃO: Envia o valor pendente que foi quitado como ganho
+      const diff = invoice.value - (invoice.paidValue || 0);
+      const formatDate = (dateStr?: string) => {
+        if (!dateStr) return undefined;
+        return dateStr.includes('/') ? dateStr.split('/').reverse().join('-') : dateStr;
+      };
+
+      if (diff > 0) {
+        enviarTransacaoParaGastos({
+          tipo: 'ganho',
+          descricao: `Fatura Clínica - ${invoice.patientName} (${invoice.month})`,
+          valor: diff,
+          data: formatDate(invoice.date)
+        });
+      }
     } catch (err: any) {
       setErrorMsg("Erro ao atualizar pagamento da fatura: " + err.message);
     }

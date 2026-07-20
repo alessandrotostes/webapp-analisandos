@@ -88,6 +88,52 @@ export async function deletePatient(id: string): Promise<void> {
   await deleteDoc(docRef);
 }
 
+// Propaga a alteração de nome do paciente para sessões e faturas relacionadas
+export async function updatePatientNameInRelatedDocs(
+  oldName: string,
+  newName: string
+): Promise<void> {
+  if (oldName === newName) return;
+
+  const BATCH_LIMIT = 450;
+  let batch = writeBatch(db);
+  let count = 0;
+
+  // Atualiza sessões com o nome antigo
+  const sessionsRef = collection(db, 'sessions');
+  const sessionsQuery = query(sessionsRef, where('patientName', '==', oldName));
+  const sessionsSnapshot = await getDocs(sessionsQuery);
+
+  for (const docSnapshot of sessionsSnapshot.docs) {
+    batch.update(docSnapshot.ref, { patientName: newName });
+    count++;
+    if (count >= BATCH_LIMIT) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+
+  // Atualiza faturas com o nome antigo
+  const invoicesRef = collection(db, 'invoices');
+  const invoicesQuery = query(invoicesRef, where('patientName', '==', oldName));
+  const invoicesSnapshot = await getDocs(invoicesQuery);
+
+  for (const docSnapshot of invoicesSnapshot.docs) {
+    batch.update(docSnapshot.ref, { patientName: newName });
+    count++;
+    if (count >= BATCH_LIMIT) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+
+  if (count > 0) {
+    await batch.commit();
+  }
+}
+
 // ==========================================
 // SERVIÇOS DE FATURAS (INVOICES - CRUD)
 // ==========================================
