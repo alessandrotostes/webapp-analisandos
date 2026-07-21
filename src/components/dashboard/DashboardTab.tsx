@@ -131,7 +131,52 @@ export function DashboardTab({
   const monthNum = monthNumMap[selectedMonth] || '07';
   const prefix = `${selectedYear}-${monthNum}`;
 
+  const eligiblePatientsForPrevista = patients
+    .filter(p => {
+      if (p.origin === 'zenklub') return false;
+      if (p.status === 'active') return true;
+      const hasSessionInMonth = (sessions || []).some(s =>
+        s.patientName === p.name &&
+        s.date &&
+        s.date.startsWith(prefix) &&
+        (!s.isCancelled || s.isCharged)
+      );
+      return hasSessionInMonth;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
+  const previstaList = eligiblePatientsForPrevista.map(p => {
+    const patientSessions = (sessions || []).filter(s => {
+      return (
+        s.patientName === p.name &&
+        s.date &&
+        s.date.startsWith(prefix) &&
+        (!s.isCancelled || s.isCharged)
+      );
+    });
+
+    const isPackagePatient = patientSessions.some(s => s.isPackage === true);
+    let expectedValue = 0;
+
+    if (isPackagePatient) {
+      const inv = displayInvoices?.find(i => i.patientName === p.name);
+      expectedValue = inv ? inv.value : (patientSessions.length * p.defaultRate);
+    } else {
+      expectedValue = patientSessions.reduce((sum, s) => {
+        const rate = p.defaultRate;
+        const val = s.sessionValue !== undefined ? s.sessionValue : rate;
+        return sum + val;
+      }, 0);
+    }
+
+    return {
+      patientName: p.name,
+      sessionsCount: patientSessions.length,
+      expectedValue
+    };
+  });
+
+  const totalPrevistaCalculated = previstaList.reduce((sum, item) => sum + item.expectedValue, 0);
 
   const sessionsVigente = weekSessionsToReceive.filter(s => s.type === 'vigente');
   const sessionsAnterior = weekSessionsToReceive.filter(s => s.type === 'anterior');
@@ -165,9 +210,9 @@ export function DashboardTab({
       <section className="dashboard-grid">
         <div onClick={() => setShowPrevistaModal(true)} style={{ cursor: 'pointer' }} title="Clique para ver detalhamento de receita prevista">
           <Card title="Receita Prevista (Filtro)">
-            <div className="card-value">{formatCurrency(totalMetrics.faturado)}</div>
+            <div className="card-value">{formatCurrency(totalPrevistaCalculated)}</div>
             <p className="card-subtitle">
-              Valor total lançado nas faturas <br />
+              Valor total previsto de atendimentos <br />
               <span style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', fontWeight: 'bold' }}>🔍 Clique para ver detalhamento</span>
             </p>
           </Card>
@@ -620,92 +665,49 @@ export function DashboardTab({
               Período: <strong>{selectedMonth || 'Todos os meses'} / {selectedYear}</strong>
             </p>
 
-            {(() => {
-              const activePatientsForPrevista = patients
-                .filter(p => p.status === 'active' && p.origin !== 'zenklub')
-                .sort((a, b) => a.name.localeCompare(b.name));
-
-              const previstaList = activePatientsForPrevista.map(p => {
-                const patientSessions = (sessions || []).filter(s => {
-                  return (
-                    s.patientName === p.name &&
-                    s.date &&
-                    s.date.startsWith(prefix) &&
-                    (!s.isCancelled || s.isCharged)
-                  );
-                });
-
-                const isPackagePatient = patientSessions.some(s => s.isPackage === true);
-                let expectedValue = 0;
-
-                if (isPackagePatient) {
-                  const inv = displayInvoices?.find(i => i.patientName === p.name);
-                  expectedValue = inv ? inv.value : (patientSessions.length * p.defaultRate);
-                } else {
-                  expectedValue = patientSessions.reduce((sum, s) => {
-                    const rate = p.defaultRate;
-                    const val = s.sessionValue !== undefined ? s.sessionValue : rate;
-                    return sum + val;
-                  }, 0);
-                }
-
-                return {
-                  patientName: p.name,
-                  sessionsCount: patientSessions.length,
-                  expectedValue
-                };
-              });
-
-              const totalPrevistaCalculated = previstaList.reduce((sum, item) => sum + item.expectedValue, 0);
-
-              if (previstaList.length === 0) {
-                return (
-                  <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
-                    Nenhum paciente ativo registrado neste período.
-                  </p>
-                );
-              }
-
-              return (
-                <>
-                  <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.75rem' }}>Analisando</th>
-                          <th style={{ padding: '0.75rem', textAlign: 'center' }}>Sessões Previstas</th>
-                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Valor Previsto</th>
+            {previstaList.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
+                Nenhum paciente ou atendimento registrado neste período.
+              </p>
+            ) : (
+              <>
+                <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                        <th style={{ padding: '0.75rem' }}>Analisando</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'center' }}>Sessões Previstas</th>
+                        <th style={{ padding: '0.75rem', textAlign: 'right' }}>Valor Previsto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previstaList.map((item, idx) => (
+                        <tr key={item.patientName || idx} style={{ borderBottom: idx < previstaList.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                          <td style={{ padding: '0.75rem' }}>
+                            {renderPatientLink(item.patientName, { fontWeight: '600' })}
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            {item.sessionsCount}
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--accent-primary)', fontWeight: 'bold' }}>
+                            {formatCurrency(item.expectedValue)}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {previstaList.map((item, idx) => (
-                          <tr key={item.patientName || idx} style={{ borderBottom: idx < previstaList.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                            <td style={{ padding: '0.75rem' }}>
-                              {renderPatientLink(item.patientName, { fontWeight: '600' })}
-                            </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                              {item.sessionsCount}
-                            </td>
-                            <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--accent-primary)', fontWeight: 'bold' }}>
-                              {formatCurrency(item.expectedValue)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Total Previsto:
-                    </span>
-                    <strong style={{ fontSize: '1.2rem', color: 'var(--accent-primary)' }}>
-                      {formatCurrency(totalPrevistaCalculated)}
-                    </strong>
-                  </div>
-                </>
-              );
-            })()}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Total Previsto:
+                  </span>
+                  <strong style={{ fontSize: '1.2rem', color: 'var(--accent-primary)' }}>
+                    {formatCurrency(totalPrevistaCalculated)}
+                  </strong>
+                </div>
+              </>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
               <button 

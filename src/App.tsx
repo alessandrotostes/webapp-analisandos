@@ -1172,7 +1172,7 @@ export default function App() {
         pendingValue: Math.max(0, val - paid)
       };
 
-      const formatDate = (dateStr?: string) => {
+      const formatDate = (dateStr?: string | null) => {
         if (!dateStr) return undefined;
         return dateStr.includes('/') ? dateStr.split('/').reverse().join('-') : dateStr;
       };
@@ -1222,7 +1222,7 @@ export default function App() {
 
       // INTEGRAÇÃO: Envia o valor pendente que foi quitado como ganho
       const diff = invoice.value - (invoice.paidValue || 0);
-      const formatDate = (dateStr?: string) => {
+      const formatDate = (dateStr?: string | null) => {
         if (!dateStr) return undefined;
         return dateStr.includes('/') ? dateStr.split('/').reverse().join('-') : dateStr;
       };
