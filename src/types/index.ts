@@ -18,19 +18,6 @@ export interface Patient {
   lastSessionDate?: string;
 }
 
-export interface Invoice {
-  id?: string;
-  year: number;            // Ano da fatura (ex: 2025, 2026)
-  month: string;           // Mês (ex: "JANEIRO", "FEVEREIRO")
-  invoiceNumber: number;   // Nº da fatura
-  date: string | null;     // Data de emissão (AAAA-MM-DD ou null se não preenchido)
-  patientName: string;     // Nome do paciente
-  value: number;           // Valor faturado
-  paidValue: number;       // Valor pago
-  pendingValue: number;    // Valor pendente
-  notes?: string;          // Observações qualitativas
-}
-
 export interface RentLog {
   id?: string;
   patientName: string;     // Nome do paciente associado à reserva
@@ -50,7 +37,7 @@ export interface Session {
   googleEventId?: string;  // ID do evento vinculado no Google Calendar (para sync bidirecional)
   sessionValue?: number;   // Valor cobrado na sessão (R$)
   isPaid?: boolean;        // Pago ou Não Pago
-  isPackage?: boolean;     // Sessão paga via pacote (não computa na receita mensal)
+  isPackage?: boolean;     // Sessão paga via pacote
   isCancelled?: boolean;   // Sessão cancelada
   isCharged?: boolean;     // Sessão cobrada (mesmo se cancelada)
   isParentsSession?: boolean; // Sessão com os Pais do paciente

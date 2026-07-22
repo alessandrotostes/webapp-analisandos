@@ -2,6 +2,15 @@
 
 **INSTRUÇÃO PARA A IA:** Ao iniciar uma nova sessão ou antes de propor uma grande alteração, LEIA este arquivo para entender o histórico recente de mudanças, correções e versão atual do sistema. Toda vez que você concluir um conjunto de melhorias significativas, registre a nova versão aqui.
 
+## [v1.2.0] - 21 de Julho de 2026
+**Single Source of Truth (`sessions`) & Remoção da Aba de Faturamento:**
+- **Remoção Completa do Modelo de Faturas (`invoices`)**: A aba de Faturamento, modais e chamadas de CRUD de faturas (`InvoicesTab.tsx`, `InvoiceModal.tsx`, `useInvoices.ts`, `getInvoices`, `syncInvoiceWithSessions`) foram totalmente removidos da aplicação e das regras do Firestore.
+- **`sessions` como Única Fonte da Verdade**: Todos os KPIs e detalhamentos do Dashboard e de Relatórios foram migrados para calcular dinamicamente a partir dos registros de atendimentos (`sessions`).
+- **Ajuste do Reconhecimento de Pacotes (`isPackage`)**:
+  - Sessões marcadas como pacote (`isPackage === true`) passaram a ser reconhecidas na **Receita Efetivada** no mês em que o atendimento ocorre.
+  - Isso garante a convergência da equação financeira fundamental em todos os meses: `Receita Efetivada + Saldo Devedor = Receita Prevista`.
+- **Refatoração dos Métricas Anuais e Salário Líquido**: Acumulados brutos/líquidos e salário mensal recalculados dinamicamente com base nas sessões pagas e de pacotes, englobando o faturamento do ciclo Zenklub (24 a 23).
+
 ---
 
 ## [v1.1.0] - 12 de Julho de 2026

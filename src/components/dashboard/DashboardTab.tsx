@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card } from '../ui/Card';
-import type { Session, Patient, Invoice } from '../../types';
+import type { Session, Patient } from '../../types';
 
 interface DashboardTabProps {
   hideValues?: boolean;
@@ -31,7 +31,6 @@ interface DashboardTabProps {
   selectedYear: number;
   sessions?: Session[];
   onSelectPatientByName?: (name: string) => void;
-  displayInvoices?: Invoice[];
 }
 
 export function DashboardTab({
@@ -59,31 +58,11 @@ export function DashboardTab({
   selectedYear,
   sessions = [],
   onSelectPatientByName,
-  displayInvoices = []
 }: DashboardTabProps) {
   const [showZenklubModal, setShowZenklubModal] = useState(false);
   const [showReceitaModal, setShowReceitaModal] = useState(false);
   const [showPrevistaModal, setShowPrevistaModal] = useState(false);
   const [showPendenteModal, setShowPendenteModal] = useState(false);
-
-  const isInvoiceValidForPatientStatus = (inv: Invoice) => {
-    const p = patients.find(pat => pat.name === inv.patientName);
-    if (!p) return true;
-    if (p.status === 'active') return true;
-    const lastSessionMonthStr = p.lastSessionDate ? p.lastSessionDate.split('-')[1] : null;
-    const lastSessionYear = p.lastSessionDate ? Number(p.lastSessionDate.split('-')[0]) : null;
-    if (!lastSessionMonthStr || !lastSessionYear) return false;
-    const monthNumMap: Record<string, number> = {
-      'JANEIRO': 1, 'FEVEREIRO': 2, 'MARÇO': 3, 'ABRIL': 4,
-      'MAIO': 5, 'JUNHO': 6, 'JULHO': 7, 'AGOSTO': 8,
-      'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
-    };
-    const invMonthNum = monthNumMap[inv.month] || 1;
-    const lastSessMonthNum = Number(lastSessionMonthStr);
-    if (inv.year < lastSessionYear) return true;
-    if (inv.year > lastSessionYear) return false;
-    return invMonthNum <= lastSessMonthNum;
-  };
 
   const isPatientClickable = (name: string) => patients.some(p => p.name === name);
 
@@ -155,19 +134,11 @@ export function DashboardTab({
       );
     });
 
-    const isPackagePatient = patientSessions.some(s => s.isPackage === true);
-    let expectedValue = 0;
-
-    if (isPackagePatient) {
-      const inv = displayInvoices?.find(i => i.patientName === p.name);
-      expectedValue = inv ? inv.value : (patientSessions.length * p.defaultRate);
-    } else {
-      expectedValue = patientSessions.reduce((sum, s) => {
-        const rate = p.defaultRate;
-        const val = s.sessionValue !== undefined ? s.sessionValue : rate;
-        return sum + val;
-      }, 0);
-    }
+    const expectedValue = patientSessions.reduce((sum, s) => {
+      const rate = p.defaultRate;
+      const val = s.sessionValue !== undefined ? s.sessionValue : rate;
+      return sum + val;
+    }, 0);
 
     return {
       patientName: p.name,
@@ -508,11 +479,37 @@ export function DashboardTab({
             </p>
 
             {(() => {
-              const paidInvoices = displayInvoices
-                .filter(inv => isInvoiceValidForPatientStatus(inv) && inv.id !== 'virtual-zenklub-invoice' && inv.paidValue > 0)
+              const getSessionValue = (s: Session) => {
+                if (s.sessionValue !== undefined && s.sessionValue !== null) return s.sessionValue;
+                const p = patients.find(pat => pat.name === s.patientName);
+                return p ? p.defaultRate : (Number(s.paymentInfo) || 150);
+              };
+
+              const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
+              const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
+
+              const nonZenklubMonthSessions = (sessions || []).filter(s => {
+                const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+                if (isZenklub) return false;
+                return s.date && s.date.startsWith(prefix) && (!s.isCancelled || s.isCharged);
+              });
+
+              const paidMap = new Map<string, number>();
+              nonZenklubMonthSessions.filter(s => s.isPaid === true || s.isPackage === true).forEach(s => {
+                const current = paidMap.get(s.patientName) || 0;
+                paidMap.set(s.patientName, current + getSessionValue(s));
+              });
+
+              const paidItems = Array.from(paidMap.entries())
+                .map(([patientName, paidValue]) => ({
+                  patientName,
+                  month: selectedMonth,
+                  year: selectedYear,
+                  paidValue
+                }))
                 .sort((a, b) => a.patientName.localeCompare(b.patientName));
 
-              if (paidInvoices.length === 0) {
+              if (paidItems.length === 0) {
                 return (
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
                     Nenhum pagamento registrado neste período.
@@ -531,8 +528,8 @@ export function DashboardTab({
                       </tr>
                     </thead>
                     <tbody>
-                      {paidInvoices.map((item, idx) => (
-                        <tr key={item.id || idx} style={{ borderBottom: idx < paidInvoices.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                      {paidItems.map((item, idx) => (
+                        <tr key={item.patientName || idx} style={{ borderBottom: idx < paidItems.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
                           <td style={{ padding: '0.75rem', color: 'var(--text-primary)' }}>{renderPatientLink(item.patientName, { fontWeight: '600' })}</td>
                           <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{item.month} / {item.year}</td>
                           <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--accent-success)', fontWeight: 'bold' }}>{formatCurrency(item.paidValue)}</td>
@@ -586,11 +583,37 @@ export function DashboardTab({
             </p>
 
             {(() => {
-              const pendingInvoices = displayInvoices
-                .filter(inv => isInvoiceValidForPatientStatus(inv) && inv.id !== 'virtual-zenklub-invoice' && inv.pendingValue > 0)
+              const getSessionValue = (s: Session) => {
+                if (s.sessionValue !== undefined && s.sessionValue !== null) return s.sessionValue;
+                const p = patients.find(pat => pat.name === s.patientName);
+                return p ? p.defaultRate : (Number(s.paymentInfo) || 150);
+              };
+
+              const zenklubPatients = patients.filter(p => p.origin === 'zenklub');
+              const zenklubPatientNames = new Set(zenklubPatients.map(p => p.name));
+
+              const nonZenklubMonthSessions = (sessions || []).filter(s => {
+                const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+                if (isZenklub) return false;
+                return s.date && s.date.startsWith(prefix) && (!s.isCancelled || s.isCharged);
+              });
+
+              const pendingMap = new Map<string, number>();
+              nonZenklubMonthSessions.filter(s => s.isPaid !== true && !s.isPackage).forEach(s => {
+                const current = pendingMap.get(s.patientName) || 0;
+                pendingMap.set(s.patientName, current + getSessionValue(s));
+              });
+
+              const pendingItems = Array.from(pendingMap.entries())
+                .map(([patientName, pendingValue]) => ({
+                  patientName,
+                  month: selectedMonth,
+                  year: selectedYear,
+                  pendingValue
+                }))
                 .sort((a, b) => a.patientName.localeCompare(b.patientName));
 
-              if (pendingInvoices.length === 0) {
+              if (pendingItems.length === 0) {
                 return (
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
                     Nenhum saldo pendente neste período.
@@ -609,8 +632,8 @@ export function DashboardTab({
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingInvoices.map((item, idx) => (
-                        <tr key={item.id || idx} style={{ borderBottom: idx < pendingInvoices.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                      {pendingItems.map((item, idx) => (
+                        <tr key={item.patientName || idx} style={{ borderBottom: idx < pendingItems.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
                           <td style={{ padding: '0.75rem', color: 'var(--text-primary)', fontWeight: '600' }}>
                             {renderPatientLink(item.patientName)}
                           </td>

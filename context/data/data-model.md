@@ -8,21 +8,8 @@ Este documento define a modelagem dos dados e as interfaces TypeScript que repre
 
 Para cobrir todos os dados apresentados no arquivo PDF, dividimos o modelo em quatro entidades principais:
 
-### 1.1. Fatura (`Invoice`)
-Representa as linhas da tabela "Controlador de Faturas".
-```typescript
-export interface Invoice {
-  id?: string;             // Gerado pelo Firestore
-  month: string;           // Ex: "JANEIRO", "FEVEREIRO"
-  invoiceNumber: number;   // Nº da fatura no mês
-  date: string;            // Data de emissão (DD/MM/AAAA)
-  patientName: string;     // Nome do analisando
-  value: number;           // Valor faturado (R$)
-  paidValue: number;       // Total pago (R$)
-  pendingValue: number;    // Valor pendente (R$)
-  notes?: string;          // Observações qualitativas (se aplicável)
-}
-```
+### 1.1. Fatura (`Invoice`) [DEPRECIADO na v1.2.0]
+*A entidade `Invoice` foi descontinuada. Todos os cálculos de faturamento, receita prevista, receita efetivada e saldo devedor agora são derivados dinamicamente da coleção `Session` (Single Source of Truth).*
 
 ### 1.2. Aluguel de Consultório (`RentLog`)
 Representa o rateio de custos de sala com base nos atendimentos físicos.
