@@ -11,7 +11,7 @@ Quando o estado `hideValues` é verdadeiro:
 
 ## Onde se aplica
 O `hideValues` é passado via `props` do `App.tsx` para todas as views:
-- **Dashboard:** Cards, gráficos e modais (Detalhamento de Faturamento e Pendências).
+- **Dashboard:** Cards, gráficos e modais (Detalhamento de Receita Efetivada e Saldo Devedor).
 - **Analisandos:** Lista de pacientes.
 - **Prontuário (PatientDashboard):** Cabeçalho interno e histórico financeiro do paciente.
-- **Faturamento e Repasses:** Tabelas detalhadas de extrato.
+- **Repasses:** Tabelas detalhadas de repasses e custos.

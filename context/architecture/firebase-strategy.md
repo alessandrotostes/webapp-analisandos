@@ -6,24 +6,24 @@ Este documento detalha o planejamento das coleções do Firestore, a estratégia
 
 ## 1. Estrutura de Coleções do Firestore
 
-Utilizaremos quatro coleções de primeiro nível no Firestore:
+Utilizamos coleções de primeiro nível no Firestore:
 
 ```
-/invoices
-  - {invoiceId} -> Documento da Fatura (Invoice)
+/patients
+  - {patientId} -> Documento do Analisando (Patient)
+
+/sessions
+  - {sessionId} -> Documento de Detalhe de Sessão (Session) [Single Source of Truth]
 
 /rent_logs
   - {rentLogId} -> Documento de Log de Aluguel (RentLog)
-
-/sessions
-  - {sessionId} -> Documento de Detalhe de Sessão (Session)
 
 /platform_transactions
   - {transactionId} -> Documento de Transação (PlatformTransaction)
 ```
 
 > [!NOTE]
-> Optamos por coleções de primeiro nível ao invés de subcoleções (ex: `/patients/{id}/sessions`) para permitir queries globais simplificadas de relatórios financeiros por data, sem requerer queries complexas de subcoleções que consomem mais leituras.
+> Optamos por coleções de primeiro nível ao invés de subcoleções (ex: `/patients/{id}/sessions`) para permitir queries globais simplificadas de relatórios financeiros por data, sem requerer queries complexas de subcoleções que consomem mais leituras. A coleção `/invoices` foi descontinuada na v1.2.0.
 
 ---
 
@@ -34,13 +34,13 @@ O processo de carga inicial lê a planilha consolidada na raiz do projeto e envi
 ### 2.1. Prevenção de Duplicidade
 Antes de iniciar a gravação, a aplicação executará uma query de verificação:
 ```typescript
-const querySnapshot = await getDocs(query(collection(db, 'invoices'), limit(1)));
+const querySnapshot = await getDocs(query(collection(db, 'sessions'), limit(1)));
 if (!querySnapshot.empty) {
   console.log("Carga inicial já realizada anteriormente. Operação abortada.");
   return;
 }
 ```
-Caso a coleção `invoices` já tenha pelo menos um registro, o seed será ignorado automaticamente.
+Caso a coleção `sessions` já tenha pelo menos um registro, o seed será ignorado automaticamente.
 
 ### 2.2. Otimização com Batch Writes (Gravações em Lote)
 O Firestore impõe um limite de **500 operações** por gravação em lote (Batch Write). Para processar centenas de registros de forma eficiente e atômica, a lógica de seed dividirá os dados:

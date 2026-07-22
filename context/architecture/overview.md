@@ -22,22 +22,22 @@ A interface do usuário não depende de detalhes do Firebase. Ela consome dados 
 
 ## 2. Estrutura de Pastas e Arquivos
 
-O projeto será estruturado da seguinte forma no diretório `src/`:
+O projeto está estruturado da seguinte forma no diretório `src/`:
 
 ```
 src/
-├── .context/               # Documentação de contexto do projeto (na raiz)
+├── context/                # Documentação de contexto do projeto (na raiz)
 ├── src/
 │   ├── assets/             # Imagens, ícones e estilos globais
 │   ├── components/         # Componentes visuais reutilizáveis (Tabelas, Modais, Inputs)
-│   │   ├── ui/             # Componentes primitivos/visuais genéricos (Button, Table, Card)
-│   │   └── business/       # Componentes ligados ao domínio (DashboardCards, InvoiceForm)
+│   │   ├── dashboard/      # Componentes de Dashboard e detalhamentos (DashboardTab)
+│   │   ├── patients/       # Componentes de CRM de analisandos (PatientsTab, PatientDashboard)
+│   │   ├── transfers/      # Componentes de repasses e custos (TransfersTab)
+│   │   ├── modals/         # Modais reutilizáveis (PatientModal, SessionModal, ConfirmModal)
+│   │   └── ui/             # Componentes primitivos/visuais genéricos (Button, Table, Card)
 │   ├── config/             # Configurações globais (firebase-config.ts)
-│   ├── hooks/              # Custom Hooks (useInvoices, useRent, useSeedDatabase)
-│   ├── services/           # Camada de serviços (firestoreService.ts, parserService.ts)
-│   ├── types/              # Definições estritas de tipos TypeScript
-│   │   └── index.ts
-│   ├── utils/              # Funções utilitárias puras (formatters, calculations)
+│   ├── services/           # Camada de serviços (firestoreService.ts, gcalService.ts)
+│   ├── types/              # Definições estritas de tipos TypeScript (index.ts)
 │   ├── App.tsx             # Componente raiz da aplicação
 │   └── main.tsx            # Ponto de entrada do React
 ├── package.json
@@ -51,21 +51,17 @@ src/
 
 A comunicação com o Firebase é isolada em `src/services/firebase/firestoreService.ts`.
 Este arquivo expõe funções tipadas como:
-* `getInvoices()`
-* `addInvoice()`
-* `updateInvoice()`
-* `seedCollection(data)` (executa Batch Writes)
+* `getSessions()`
+* `addSession()`
+* `updateSession()`
+* `deleteSession()`
+* `getPatients()` / `addPatient()` / `updatePatient()` / `deletePatient()`
 
-Toda a lógica de paginação, filtros e tratamento de concorrência ou limites do plano gratuito é tratada nessa camada.
+Toda a lógica de consulta, paginação e escrita no Firestore é tratada nessa camada.
 
 ---
 
-## 4. Camada de Custom Hooks
+## 4. Single Source of Truth (`sessions`)
 
-Os hooks customizados encapsulam a reatividade dos estados assíncronos. Eles gerenciam:
-* Estado de carregamento (`loading: boolean`)
-* Estado de erro (`error: Error | null`)
-* Dados carregados (`data: T[]`)
-* Função de re-atualização (`refetch: () => void`)
-
-Isso remove o acúmulo de `useEffect` e `useState` dentro dos componentes React, tornando a UI limpa e declarativa.
+A coleção `sessions` serve como fonte única da verdade para a inteligência financeira do sistema.
+Todos os KPIs de Receita Prevista, Receita Efetivada (incluindo sessões pagas e de pacotes no mês de ocorrência), Saldo Devedor, Salário Líquido e Acumulado Anual são calculados dinamicamente a partir dos registros de `sessions`.
