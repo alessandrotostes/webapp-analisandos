@@ -1,6 +1,6 @@
 
-import { useState } from 'react';
-import type { Patient, Session, RateReadjustment } from '../../types';
+import { useState, useEffect } from 'react';
+import type { Patient, Session, RateReadjustment, PatientSupervision } from '../../types';
 import { Button } from '../ui/Button';
 import { Edit2 } from 'lucide-react';
 
@@ -20,11 +20,13 @@ interface PatientDashboardProps {
   generalNotesText: string;
   setGeneralNotesText: (txt: string) => void;
   handleSaveGeneralPatientDetails: () => void;
+  handleSavePatientFicha?: (fichaData: { name: string; initialRate: number; firstSessionDate: string; packageSize?: number }) => Promise<void>;
   savingNotes: boolean;
   handleOpenSessionModal: (session?: Session) => void;
   handleDeleteSession: (id: string) => void;
   formatCurrency: (val: number) => string;
   handleUpdatePatientReadjustments: (readjustments: RateReadjustment[]) => Promise<void>;
+  handleUpdatePatientSupervisions?: (supervisions: PatientSupervision[]) => Promise<void>;
   handleToggleSessionPaymentStatus: (session: Session) => Promise<void>;
   handleToggleSessionCancellation: (session: Session) => Promise<void>;
   handleToggleSessionCharge: (session: Session) => Promise<void>;
@@ -33,8 +35,8 @@ interface PatientDashboardProps {
   handleUpdateSessionDate: (sessionId: string, date: string) => Promise<void>;
   handleUpdateSessionModality: (sessionId: string, modality: string) => Promise<void>;
   handleUpdateSessionPatientType: (sessionId: string, patientType: string) => Promise<void>;
-  generalOriginText: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student';
-  setGeneralOriginText: (origin: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student') => void;
+  generalOriginText: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student' | 'supervision';
+  setGeneralOriginText: (origin: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student' | 'supervision') => void;
   showConfirm: (
     message: string,
     onConfirm: () => void | Promise<void>,
@@ -55,20 +57,13 @@ export function PatientDashboard({
   patientDashboardSessions,
   loadingDashboardSessions,
   handleQuickUpdatePatientStatus,
-  generalPhoneText,
-  setGeneralPhoneText,
-  generalEmailText,
-  setGeneralEmailText,
-  generalDefaultRate,
-  setGeneralDefaultRate,
-  generalNotesText,
-  setGeneralNotesText,
-  handleSaveGeneralPatientDetails,
+  handleSavePatientFicha,
   savingNotes,
   handleOpenSessionModal,
   handleDeleteSession,
   formatCurrency,
   handleUpdatePatientReadjustments,
+  handleUpdatePatientSupervisions,
   handleToggleSessionPaymentStatus,
   handleToggleSessionCancellation,
   handleToggleSessionCharge,
@@ -77,12 +72,12 @@ export function PatientDashboard({
   handleUpdateSessionDate,
   handleUpdateSessionModality,
   handleUpdateSessionPatientType,
-  generalOriginText,
-  setGeneralOriginText,
   showConfirm
 }: PatientDashboardProps) {
   const [newReadjustmentDate, setNewReadjustmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [newReadjustmentValue, setNewReadjustmentValue] = useState<number | string>('');
+  const [newSupervisionDate, setNewSupervisionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showSupervisionsModal, setShowSupervisionsModal] = useState(false);
   const [editingSessionValueId, setEditingSessionValueId] = useState<string | null>(null);
   const [tempSessionValue, setTempSessionValue] = useState<string>('');
   const [editingSessionDateId, setEditingSessionDateId] = useState<string | null>(null);
@@ -93,6 +88,31 @@ export function PatientDashboard({
   const [tempSessionPatientType, setTempSessionPatientType] = useState<string>('');
   const [expandedNotesSessionId, setExpandedNotesSessionId] = useState<string | null>(null);
   const [tempNotesText, setTempNotesText] = useState<string>('');
+
+  const [sessionFilter, setSessionFilter] = useState<'all' | 'notes' | 'cancelled'>('all');
+
+  const earliestValidSession = [...patientDashboardSessions]
+    .filter(s => s.date && (!s.isCancelled || s.isCharged))
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+  const autoFirstSessionDate = selectedPatient.firstSessionDate || earliestValidSession?.date || '';
+  const autoInitialRate = selectedPatient.initialRate !== undefined
+    ? selectedPatient.initialRate
+    : (earliestValidSession?.sessionValue !== undefined && earliestValidSession.sessionValue > 0
+      ? earliestValidSession.sessionValue
+      : selectedPatient.defaultRate);
+
+  const [fichaName, setFichaName] = useState(selectedPatient.name || '');
+  const [fichaInitialRate, setFichaInitialRate] = useState<number>(autoInitialRate || 0);
+  const [fichaFirstSessionDate, setFichaFirstSessionDate] = useState(autoFirstSessionDate);
+  const [fichaPackageSize, setFichaPackageSize] = useState<number>(selectedPatient.packageSize || 4);
+
+  useEffect(() => {
+    setFichaName(selectedPatient.name || '');
+    setFichaInitialRate(autoInitialRate || 0);
+    setFichaFirstSessionDate(autoFirstSessionDate);
+    setFichaPackageSize(selectedPatient.packageSize || 4);
+  }, [selectedPatient.id, selectedPatient.name, selectedPatient.packageSize, autoInitialRate, autoFirstSessionDate]);
 
   const getTodayStr = () => {
     const today = new Date();
@@ -117,17 +137,46 @@ export function PatientDashboard({
   );
   const lastReadjustment = sortedReadjustments[0] || null;
 
-  const getUpcomingSessionsOfCurrentMonth = () => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    const todayStr = `${yyyy}-${mm}-${dd}`;
-    const currentMonthPrefix = `${yyyy}-${mm}`;
+  const sortedSupervisions = [...(selectedPatient.supervisions || [])].sort(
+    (a, b) => b.date.localeCompare(a.date)
+  );
+  const lastTwoSupervisions = sortedSupervisions.slice(0, 2);
 
-    return patientDashboardSessions
-      .filter(s => s.date.startsWith(currentMonthPrefix) && s.date >= todayStr)
-      .sort((a, b) => a.date.localeCompare(b.date));
+  const handleAddSupervision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!newSupervisionDate) {
+      showConfirm("Por favor, selecione a data da supervisão.", () => {}, { isAlert: true, title: 'Aviso' });
+      return;
+    }
+
+    const newEntry: PatientSupervision = {
+      id: Date.now().toString(),
+      date: newSupervisionDate
+    };
+
+    const updatedList = [...(selectedPatient.supervisions || []), newEntry];
+
+    try {
+      await handleUpdatePatientSupervisions?.(updatedList);
+      showConfirm("Supervisão adicionada com sucesso!", () => {}, { isAlert: true, title: 'Sucesso' });
+    } catch {
+      // erro tratado no pai
+    }
+  };
+
+  const handleDeleteSupervision = (id: string) => {
+    showConfirm(
+      "Deseja realmente excluir este registro de supervisão?",
+      async () => {
+        const updatedList = (selectedPatient.supervisions || []).filter(s => s.id !== id);
+        try {
+          await handleUpdatePatientSupervisions?.(updatedList);
+        } catch {
+          // erro tratado no pai
+        }
+      }
+    );
   };
 
   const handleAddReadjustment = async (e: React.FormEvent) => {
@@ -149,7 +198,7 @@ export function PatientDashboard({
       await handleUpdatePatientReadjustments(updatedList);
       setNewReadjustmentValue('');
       showConfirm("Reajuste adicionado com sucesso!", () => {}, { isAlert: true, title: 'Sucesso' });
-    } catch (err) {
+    } catch {
       // erro tratado no pai
     }
   };
@@ -161,7 +210,7 @@ export function PatientDashboard({
         const updatedList = (selectedPatient.rateReadjustments || []).filter(r => r.id !== id);
         try {
           await handleUpdatePatientReadjustments(updatedList);
-        } catch (err) {
+        } catch {
           // erro tratado no pai
         }
       }
@@ -169,14 +218,71 @@ export function PatientDashboard({
   };
 
   const renderSessionList = (sessionsList: Session[]) => {
+    // Aplica o filtro de visualização do histórico
+    const filteredSessions = sessionsList.filter((s) => {
+      if (sessionFilter === 'notes') {
+        const hasNotes = !!(s.notes && s.notes.trim());
+        const hasPaymentText = !!(s.paymentInfo && isNaN(Number(s.paymentInfo.trim())) && s.paymentInfo.trim());
+        return hasNotes || hasPaymentText;
+      }
+      if (sessionFilter === 'cancelled') {
+        return !!s.isCancelled;
+      }
+      return true;
+    });
+
+    // Cálculo do ciclo de pacote:
+    // Se a sessão já possui packageSessionIndex e packageTotalSessions gravados, usa esses valores.
+    // Para sessões antigas que não possuem esses campos, calcula sequencialmente.
+    const packageSize = selectedPatient.packageSize || 4;
+    const sortedValidSessions = [...sessionsList]
+      .filter(s => (!s.isCancelled || s.isCharged) && s.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    let packageCounter = 0;
+    const packageSessionInfoMap = new Map<string, { current: number; total: number; isLast: boolean }>();
+    sortedValidSessions.forEach(s => {
+      if (s.packageSessionIndex !== undefined && s.packageTotalSessions !== undefined) {
+        const current = s.packageSessionIndex;
+        const total = s.packageTotalSessions;
+        if (s.id) {
+          packageSessionInfoMap.set(s.id, { current, total, isLast: current === total });
+        }
+      } else if (s.isPackage) {
+        const currentNum = (packageCounter % packageSize) + 1;
+        packageCounter++;
+        const isLast = currentNum === packageSize;
+        if (s.id) {
+          packageSessionInfoMap.set(s.id, { current: currentNum, total: packageSize, isLast });
+        }
+      }
+    });
+
+    if (filteredSessions.length === 0) {
+      return (
+        <div style={{ minHeight: '924px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontStyle: 'italic', gap: '0.5rem' }}>
+          <span>Nenhuma sessão encontrada para o filtro selecionado.</span>
+          <Button variant="secondary" onClick={() => setSessionFilter('all')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+            Limpar filtro
+          </Button>
+        </div>
+      );
+    }
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, maxHeight: '480px', paddingRight: '0.25rem' }}>
-        {sessionsList.map((s) => {
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, height: '924px', minHeight: '924px', maxHeight: '924px', paddingRight: '0.25rem' }}>
+        {filteredSessions.map((s) => {
+          const pkgInfo = s.id ? packageSessionInfoMap.get(s.id) : null;
           return (
             <div
               key={s.id}
               style={{
-                padding: '1rem',
+                padding: '0.85rem 1rem',
+                minHeight: '144px',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
                 borderRadius: '12px',
                 border: '1px solid var(--border-color)',
                 background: 'var(--bg-main)',
@@ -296,8 +402,9 @@ export function PatientDashboard({
                     </div>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>
-                        {s.modality.replace('_', ' ')}
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span>{(s.modality || '').toLowerCase().includes('presencial') ? '🏢' : '🌐'}</span>
+                        <span>{s.modality.replace('_', ' ')}</span>
                       </span>
                       <button
                         type="button"
@@ -344,9 +451,10 @@ export function PatientDashboard({
                       >
                         <option value="particular">Particular</option>
                         <option value="social_clinic">Clínica Social</option>
-                        <option value="training_student">Aluno</option>
                         <option value="integrando_ser">Integrando Ser</option>
-                        <option value="zenklub">Zenklub</option>
+                        <option value="training_student">Aluno</option>
+                        <option value="supervision">Supervisão</option>
+                        {tempSessionPatientType === 'zenklub' && <option value="zenklub">Zenklub</option>}
                       </select>
                       <button
                         type="button"
@@ -373,7 +481,7 @@ export function PatientDashboard({
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                       <span style={{ fontSize: '0.65rem', color: 'var(--accent-primary)', textTransform: 'uppercase', fontWeight: 'bold' }}>
-                        {((s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(s.modality) ? s.modality : selectedPatient.origin)) || '').replace('_', ' ').replace('training student', 'Aluno').replace('social clinic', 'Clínica Social')}
+                        {((s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student', 'supervision'].includes(s.modality) ? s.modality : selectedPatient.origin)) || '').replace('_', ' ').replace('training student', 'Aluno').replace('social clinic', 'Clínica Social').replace('supervision', 'Supervisão')}
                       </span>
                       <button
                         type="button"
@@ -381,7 +489,7 @@ export function PatientDashboard({
                           e.stopPropagation();
                           if (s.id) {
                             setEditingSessionPatientTypeId(s.id);
-                            const curType = s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(s.modality) ? s.modality : selectedPatient.origin) || 'particular';
+                            const curType = s.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student', 'supervision'].includes(s.modality) ? s.modality : selectedPatient.origin) || 'particular';
                             setTempSessionPatientType(curType);
                           }
                         }}
@@ -405,12 +513,37 @@ export function PatientDashboard({
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.duration.toFixed(1)}h de sessão</span>
                   {s.paymentInfo && isNaN(Number(s.paymentInfo.trim())) && (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                      Obs: {s.paymentInfo}
-                    </span>
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.9rem',
+                        color: 'var(--text-primary)',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {s.paymentInfo}
+                    </div>
+                  )}
+                  {s.notes && (
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.9rem',
+                        color: 'var(--text-primary)',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {s.notes}
+                    </div>
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -647,7 +780,39 @@ export function PatientDashboard({
                       }}
                       title="Clique para alternar: Não Pago → Pago → Pacote"
                     >
-                      {s.isPackage ? '📦 Pacote' : (s.isPaid ? '🟢 Pago' : '🔴 Não Pago')}
+                      {s.isPackage ? (
+                        pkgInfo ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span>📦 Pacote ({pkgInfo.current}/{pkgInfo.total})</span>
+                            {pkgInfo.isLast && (
+                              <span
+                                style={{
+                                  fontSize: '0.62rem',
+                                  background: 'var(--accent-warning)',
+                                  color: '#000',
+                                  padding: '0.05rem 0.25rem',
+                                  borderRadius: '4px',
+                                  fontWeight: '800',
+                                  marginLeft: '0.1rem'
+                                }}
+                                title="Última sessão do pacote! Momento de cobrar renovação."
+                              >
+                                Cobrar
+                              </span>
+                            )}
+                          </span>
+                        ) : '📦 Pacote'
+                      ) : s.isPaid ? (
+                        '🟢 Pago'
+                      ) : (
+                        pkgInfo ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span>🔴 Não Pago (Sessão {pkgInfo.current}/{pkgInfo.total})</span>
+                          </span>
+                        ) : (
+                          '🔴 Não Pago'
+                        )
+                      )}
                     </button>
                   )}
                 </div>
@@ -730,7 +895,14 @@ export function PatientDashboard({
           <div>
             <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)', margin: 0 }}>Prontuário: {hideValues ? 'Analisando Oculto' : selectedPatient.name}</h2>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
-              Origem: <span style={{ textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 'bold' }}>{selectedPatient.origin.replace('_', ' ')}</span>
+              Origem: <span style={{ textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 'bold' }}>{{
+                particular: 'Particular',
+                social_clinic: 'Clínica Social',
+                integrando_ser: 'Integrando Ser',
+                training_student: 'Aluno em Formação',
+                supervision: 'Supervisão',
+                zenklub: 'Zenklub'
+              }[selectedPatient.origin] || selectedPatient.origin.replace('_', ' ')}</span>
               {' • '} Formato: <span style={{ textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 'bold' }}>{selectedPatient.format}</span>
               {' • '} Valor Padrão: <span style={{ color: 'var(--accent-success)', fontWeight: 'bold' }}>{formatCurrency(selectedPatient.defaultRate)}</span>
               {lastReadjustment && (
@@ -748,6 +920,34 @@ export function PatientDashboard({
               <span style={{ background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 📅 <strong>Total de Sessões:</strong> {patientDashboardSessions.filter(s => !s.isCancelled && s.date <= todayStr).length}
               </span>
+              {(() => {
+                const packageSize = selectedPatient.packageSize || 4;
+                const packageSessions = patientDashboardSessions.filter(
+                  s => s.isPackage && (!s.isCancelled || s.isCharged)
+                );
+                if (packageSessions.length === 0) return null;
+                const currentInCycle = (packageSessions.length % packageSize) === 0 ? packageSize : (packageSessions.length % packageSize);
+                const isCycleComplete = currentInCycle === packageSize;
+                return (
+                  <span
+                    style={{
+                      background: isCycleComplete ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                      border: `1px solid ${isCycleComplete ? 'var(--accent-warning)' : '#8b5cf6'}`,
+                      padding: '0.25rem 0.6rem',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      color: isCycleComplete ? 'var(--accent-warning)' : '#a78bfa',
+                      fontWeight: 'bold',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                    title={isCycleComplete ? "Pacote concluído! Hora de cobrar a renovação." : "Acompanhamento do ciclo atual de pacote"}
+                  >
+                    📦 Ciclo do Pacote: <strong>{currentInCycle} de {packageSize}</strong> {isCycleComplete ? '⚠️ (Renovar)' : 'em andamento'}
+                  </span>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -772,237 +972,265 @@ export function PatientDashboard({
         </select>
       </div>
 
-      {/* Seção Superior: Histórico de Sessões & Evolução do Atendimento (O mais importante primeiro) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        {/* Card: Histórico de Sessões */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+      {/* Layout Principal em 2 Colunas: Esquerda (Histórico de sessões) | Direita (Sessões Pendentes/Pagas + Reajustes + Ficha) */}
+      <div className="patient-dashboard-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+        {/* COLUNA ESQUERDA: Histórico de Sessões */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>Histórico de Sessões</h3>
             <Button variant="success" onClick={() => handleOpenSessionModal()} style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>
               + Registrar Sessão
             </Button>
           </div>
 
+          {/* Filtros do Histórico: Todas | Com Anotações | Faltas / Canceladas */}
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginRight: '0.2rem' }}>Filtrar:</span>
+            <button
+              type="button"
+              onClick={() => setSessionFilter('all')}
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.55rem',
+                borderRadius: '999px',
+                cursor: 'pointer',
+                border: sessionFilter === 'all' ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                background: sessionFilter === 'all' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                color: sessionFilter === 'all' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                transition: 'var(--transition-smooth)'
+              }}
+            >
+              Todas
+            </button>
+            <button
+              type="button"
+              onClick={() => setSessionFilter('notes')}
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.55rem',
+                borderRadius: '999px',
+                cursor: 'pointer',
+                border: sessionFilter === 'notes' ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                background: sessionFilter === 'notes' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                color: sessionFilter === 'notes' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                transition: 'var(--transition-smooth)'
+              }}
+            >
+              📝 Com Anotações
+            </button>
+            <button
+              type="button"
+              onClick={() => setSessionFilter('cancelled')}
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.55rem',
+                borderRadius: '999px',
+                cursor: 'pointer',
+                border: sessionFilter === 'cancelled' ? '1px solid var(--accent-danger)' : '1px solid var(--border-color)',
+                background: sessionFilter === 'cancelled' ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                color: sessionFilter === 'cancelled' ? 'var(--accent-danger)' : 'var(--text-secondary)',
+                transition: 'var(--transition-smooth)'
+              }}
+            >
+              ⚠️ Faltas / Canceladas
+            </button>
+          </div>
+
           {loadingDashboardSessions ? (
-            <p style={{ color: 'var(--text-muted)' }}>Carregando sessões...</p>
+            <div style={{ minHeight: '924px' }}>
+              <p style={{ color: 'var(--text-muted)' }}>Carregando sessões...</p>
+            </div>
           ) : patientDashboardSessions.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>Nenhum atendimento registrado para este paciente.</p>
+            <div style={{ minHeight: '924px' }}>
+              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>Nenhum atendimento registrado para este paciente.</p>
+            </div>
           ) : (
             renderSessionList(patientDashboardSessions)
           )}
         </div>
 
-        {/* Card: Próximas Sessões do Mês Vigente */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>Próximas Sessões deste Mês</h3>
-          
-          {loadingDashboardSessions ? (
-            <p style={{ color: 'var(--text-muted)' }}>Carregando sessões...</p>
-          ) : (() => {
-            const upcomingSessions = getUpcomingSessionsOfCurrentMonth();
-            return upcomingSessions.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>Nenhuma sessão agendada para o restante do mês vigente.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', flex: 1, maxHeight: '480px', paddingRight: '0.25rem' }}>
-                {upcomingSessions.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{
-                      padding: '1rem',
-                      borderRadius: '12px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-main)',
-                      transition: 'var(--transition-smooth)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                      <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{formatDate(s.date)}</strong>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>
-                        {s.modality.replace('_', ' ')}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        Valor: <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(s.sessionValue !== undefined ? s.sessionValue : selectedPatient.defaultRate)}</strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSessionPaymentStatus(s);
-                        }}
-                        style={{
-                          background: s.isPackage ? 'rgba(139, 92, 246, 0.12)' : (s.isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
-                          border: `1px solid ${s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)')}`,
-                          color: s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)'),
-                          padding: '0.25rem 0.5rem',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          transition: 'var(--transition-smooth)'
-                        }}
-                        title="Clique para alternar: Não Pago → Pago → Pacote"
-                      >
-                        {s.isPackage ? '📦 Pacote' : (s.isPaid ? '🟢 Pago' : '🔴 Não Pago')}
-                      </button>
-                    </div>
+        {/* COLUNA DIREITA: 1. Sessões Pendentes/Pagas até Hoje -> 2. Reajuste de Valor -> 3. Ficha do Analisando */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* 1. Card: Sessões Pendentes até Hoje (ou Pagas do Mês Atual se tudo estiver pago) */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.15rem', minHeight: 'auto' }}>
+            {(() => {
+              const currentMonthPrefix = todayStr.slice(0, 7);
+              const validUpToToday = patientDashboardSessions.filter(
+                s => s.date && s.date <= todayStr && (!s.isCancelled || s.isCharged)
+              );
+              const pendingUpToToday = validUpToToday
+                .filter(s => !s.isPaid && !s.isPackage)
+                .sort((a, b) => a.date.localeCompare(b.date));
+
+              const hasPending = pendingUpToToday.length > 0;
+              const paidCurrentMonthUpToToday = validUpToToday
+                .filter(s => s.date.startsWith(currentMonthPrefix) && (s.isPaid || s.isPackage))
+                .sort((a, b) => b.date.localeCompare(a.date));
+
+              const displayList = hasPending ? pendingUpToToday : paidCurrentMonthUpToToday;
+
+              const packageSize = selectedPatient.packageSize || 4;
+              const sortedValidSessions = [...patientDashboardSessions]
+                .filter(s => (!s.isCancelled || s.isCharged) && s.date)
+                .sort((a, b) => a.date.localeCompare(b.date));
+
+              let packageCounter = 0;
+              const packageSessionInfoMap = new Map<string, { current: number; total: number; isLast: boolean }>();
+              sortedValidSessions.forEach(s => {
+                if (s.packageSessionIndex !== undefined && s.packageTotalSessions !== undefined) {
+                  const current = s.packageSessionIndex;
+                  const total = s.packageTotalSessions;
+                  if (s.id) {
+                    packageSessionInfoMap.set(s.id, { current, total, isLast: current === total });
+                  }
+                } else if (s.isPackage) {
+                  const currentNum = (packageCounter % packageSize) + 1;
+                  packageCounter++;
+                  const isLast = currentNum === packageSize;
+                  if (s.id) {
+                    packageSessionInfoMap.set(s.id, { current: currentNum, total: packageSize, isLast });
+                  }
+                }
+              });
+
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>
+                      {hasPending ? 'Sessões Pendentes (Até Hoje)' : 'Sessões Pagas no Mês (Até Hoje)'}
+                    </h3>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: '600',
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '6px',
+                      background: hasPending ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                      color: hasPending ? 'var(--accent-danger)' : 'var(--accent-success)',
+                      border: `1px solid ${hasPending ? 'var(--accent-danger)' : 'var(--accent-success)'}`
+                    }}>
+                      {hasPending ? `${pendingUpToToday.length} pendente(s)` : 'Em dia'}
+                    </span>
                   </div>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-      </div>
 
-      {/* Seção Inferior: Ficha Cadastral & Histórico de Reajustes (na parte de baixo da pagina) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '1.5rem' }}>
-        
-        {/* Card: Ficha do Analisando */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', minHeight: 'auto' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.35rem', margin: 0 }}>Ficha do Analisando</h3>
-          
-          <div className="responsive-form-grid">
-            <div className="filter-group">
-              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Telefone</label>
-              <input
-                type="text"
-                className="filter-input"
-                value={generalPhoneText}
-                onChange={(e) => setGeneralPhoneText(e.target.value)}
-                placeholder="Ex: (11) 99999-9999"
-                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-              />
-            </div>
-
-            <div className="filter-group">
-              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Origem</label>
-              <select
-                className="filter-select"
-                value={generalOriginText}
-                onChange={(e) => setGeneralOriginText(e.target.value as any)}
-                style={{ width: '100%', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-              >
-                <option value="particular">Particular</option>
-                <option value="social_clinic">Clínica Social</option>
-                <option value="zenklub">Zenklub</option>
-                <option value="integrando_ser">Integrando Ser</option>
-                <option value="training_student">Aluno em Formação</option>
-              </select>
-            </div>
-
-            <div className="filter-group">
-              <label className="filter-label" style={{ fontSize: '0.7rem' }}>Valor da Sessão (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                className="filter-input"
-                value={generalDefaultRate !== undefined ? generalDefaultRate : ''}
-                onChange={(e) => setGeneralDefaultRate(Number(e.target.value))}
-                placeholder="Ex: 82.00"
-                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-              />
-            </div>
-
-            <div className="filter-group">
-              <label className="filter-label" style={{ fontSize: '0.7rem' }}>E-mail</label>
-              <input
-                type="email"
-                className="filter-input"
-                value={generalEmailText}
-                onChange={(e) => setGeneralEmailText(e.target.value)}
-                placeholder="Ex: paciente@email.com"
-                style={{ padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-              />
-            </div>
+                  {loadingDashboardSessions ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Carregando sessões...</p>
+                  ) : displayList.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem', padding: '0.5rem 0', margin: 0 }}>
+                      Nenhuma sessão pendente ou paga registrada até a data atual neste mês.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto', maxHeight: '210px', paddingRight: '0.25rem' }}>
+                      {displayList.map((s) => {
+                        const pkgInfo = s.id ? packageSessionInfoMap.get(s.id) : null;
+                        return (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: '0.65rem 0.85rem',
+                              borderRadius: '10px',
+                              border: `1px solid ${hasPending ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}`,
+                              background: 'var(--bg-main)',
+                              transition: 'var(--transition-smooth)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              flexWrap: 'wrap'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                              <strong style={{ fontSize: '0.85rem', color: hasPending ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
+                                {formatDate(s.date)}
+                              </strong>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <span>{(s.modality || '').toLowerCase().includes('presencial') ? '🏢' : '🌐'}</span>
+                                <span>{s.modality.replace('_', ' ')}</span>
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(s.sessionValue !== undefined ? s.sessionValue : selectedPatient.defaultRate)}</strong>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleSessionPaymentStatus(s);
+                                }}
+                                style={{
+                                  background: s.isPackage ? 'rgba(139, 92, 246, 0.12)' : (s.isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                                  border: `1px solid ${s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)')}`,
+                                  color: s.isPackage ? '#8b5cf6' : (s.isPaid ? 'var(--accent-success)' : 'var(--accent-danger)'),
+                                  padding: '0.2rem 0.45rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: '600',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  transition: 'var(--transition-smooth)'
+                                }}
+                                title="Clique para alternar: Não Pago → Pago → Pacote"
+                              >
+                                {s.isPackage ? (
+                                  pkgInfo ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                      <span>📦 Pacote ({pkgInfo.current}/{pkgInfo.total})</span>
+                                      {pkgInfo.isLast && (
+                                        <span
+                                          style={{
+                                            fontSize: '0.62rem',
+                                            background: 'var(--accent-warning)',
+                                            color: '#000',
+                                            padding: '0.05rem 0.25rem',
+                                            borderRadius: '4px',
+                                            fontWeight: '800',
+                                            marginLeft: '0.1rem'
+                                          }}
+                                          title="Última sessão do pacote! Momento de cobrar renovação."
+                                        >
+                                          Cobrar
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : '📦 Pacote'
+                                ) : s.isPaid ? (
+                                  '🟢 Pago'
+                                ) : (
+                                  pkgInfo ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                      <span>🔴 Não Pago (Sessão {pkgInfo.current}/{pkgInfo.total})</span>
+                                    </span>
+                                  ) : (
+                                    '🔴 Não Pago'
+                                  )
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
-          <div className="filter-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-            <label className="filter-label" style={{ fontSize: '0.7rem' }}>Notas</label>
-            <textarea
-              className="filter-input"
-              value={generalNotesText}
-              onChange={(e) => setGeneralNotesText(e.target.value)}
-              placeholder="Histórico do paciente, queixas principais..."
-              rows={2}
-              style={{ resize: 'vertical', minHeight: '60px', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-            />
-          </div>
+          {/* 2. Card Simplificado: Reajustes de Valor da Sessão */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', padding: '1.15rem', minHeight: 'auto' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', margin: 0 }}>
+              Reajuste de Valor da Sessão
+            </h3>
 
-          <Button variant="primary" onClick={handleSaveGeneralPatientDetails} disabled={savingNotes} style={{ marginTop: '0.1rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
-            {savingNotes ? 'Salvando...' : '💾 Salvar Ficha'}
-          </Button>
-
-          {selectedPatient.notes && (
-            <div style={{
-              background: 'rgba(56, 189, 248, 0.08)',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
-              borderRadius: '8px',
-              padding: '0.5rem 0.75rem',
-              fontSize: '0.75rem',
-              color: 'var(--text-secondary)',
-              lineHeight: '1.4',
-              whiteSpace: 'pre-wrap',
-              marginTop: '0.4rem',
-              boxShadow: 'var(--shadow-glow)'
-            }}>
-              <strong style={{ display: 'block', marginBottom: '0.15rem', color: 'var(--accent-primary)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Notas Salvas:
-              </strong>
-              {selectedPatient.notes}
-            </div>
-          )}
-        </div>
-
-        {/* Card: Histórico de Reajustes de Valor */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', margin: 0 }}>
-            Reajustes de Valor da Sessão
-          </h3>
-
-          {/* Destaque do Último Reajuste */}
-          {lastReadjustment ? (
-            <div style={{
-              background: 'rgba(56, 189, 248, 0.08)',
-              border: '1px solid var(--accent-primary)',
-              borderRadius: '12px',
-              padding: '1rem',
-              textAlign: 'center',
-              boxShadow: 'var(--shadow-glow)'
-            }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '0.25rem', fontWeight: '600' }}>
-                Último Reajuste (Destaque)
-              </span>
-              <div style={{ fontSize: '1.6rem', fontWeight: '800', color: 'var(--accent-primary)' }}>
-                {formatCurrency(lastReadjustment.value)}
-              </div>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginTop: '0.25rem' }}>
-                em {formatDate(lastReadjustment.date)}
-              </span>
-            </div>
-          ) : (
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px dashed var(--border-color)',
-              borderRadius: '12px',
-              padding: '1.25rem 1rem',
-              textAlign: 'center'
-            }}>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Nenhum reajuste cadastrado manualmente ainda.
-              </span>
-            </div>
-          )}
-
-          {/* Formulário para Adicionar Reajuste */}
-          <form onSubmit={handleAddReadjustment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-            <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>Registrar Novo Reajuste</strong>
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <div className="filter-group" style={{ flex: '1 1 120px' }}>
-                <label className="filter-label">Data do Reajuste</label>
+            {/* Formulário Simples para Adicionar Reajuste */}
+            <form onSubmit={handleAddReadjustment} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div className="filter-group" style={{ flex: '1 1 130px' }}>
+                <label className="filter-label">Data</label>
                 <input
                   type="date"
                   className="filter-input"
@@ -1012,7 +1240,7 @@ export function PatientDashboard({
                 />
               </div>
               <div className="filter-group" style={{ flex: '1 1 120px' }}>
-                <label className="filter-label">Novo Valor (R$)</label>
+                <label className="filter-label">Valor do Reajuste (R$)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -1023,35 +1251,44 @@ export function PatientDashboard({
                   required
                 />
               </div>
-            </div>
-            <Button type="submit" variant="success" style={{ width: '100%', marginTop: '0.25rem' }}>
-              ➕ Adicionar ao Histórico
-            </Button>
-          </form>
+              <Button type="submit" variant="success" style={{ padding: '0.55rem 0.9rem' }}>
+                + Adicionar
+              </Button>
+            </form>
 
-          {/* Lista Histórica de Reajustes */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-            <strong style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Histórico Completo</strong>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto', maxHeight: '180px', paddingRight: '0.25rem' }}>
+            {/* Lista em Ordem Decrescente (Último reajuste primeiro, mais antigos abaixo) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto', maxHeight: '190px', paddingRight: '0.25rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
               {sortedReadjustments.length === 0 ? (
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.5rem 0' }}>
-                  Nenhum reajuste no histórico.
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.35rem 0' }}>
+                  Nenhum reajuste registrado.
                 </span>
               ) : (
-                sortedReadjustments.map(r => (
-                  <div key={r.id} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    padding: '0.6rem 0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.85rem'
-                  }}>
-                    <div>
-                      <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(r.value)}</strong>
-                      <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem' }}>({formatDate(r.date)})</span>
+                sortedReadjustments.map((r, index) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: index === 0 ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: index === 0 ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid var(--border-color)',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>
+                        📅 {formatDate(r.date)}
+                      </span>
+                      <strong style={{ color: index === 0 ? 'var(--accent-primary)' : 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        {formatCurrency(r.value)}
+                      </strong>
+                      {index === 0 && (
+                        <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: '700' }}>
+                          Último
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1061,8 +1298,8 @@ export function PatientDashboard({
                         border: 'none',
                         color: 'var(--accent-danger)',
                         cursor: 'pointer',
-                        fontSize: '0.9rem',
-                        padding: '0.2rem',
+                        fontSize: '0.85rem',
+                        padding: '0.15rem',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1078,8 +1315,251 @@ export function PatientDashboard({
               )}
             </div>
           </div>
+
+          {/* 3. Card Simplificado: Ficha do Analisando */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', padding: '1.15rem', minHeight: 'auto' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem', margin: 0 }}>
+              Ficha do Analisando
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div className="filter-group">
+                <label className="filter-label">Nome Completo</label>
+                <input
+                  type="text"
+                  className="filter-input"
+                  value={fichaName}
+                  onChange={(e) => setFichaName(e.target.value)}
+                  placeholder="Nome completo do analisando"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+                <div className="filter-group">
+                  <label className="filter-label">Valor da Sessão Inicial (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="filter-input"
+                    value={fichaInitialRate !== undefined ? fichaInitialRate : ''}
+                    onChange={(e) => setFichaInitialRate(Number(e.target.value))}
+                    placeholder="Ex: 150.00"
+                  />
+                </div>
+
+                <div className="filter-group">
+                  <label className="filter-label">Primeira Sessão do Paciente</label>
+                  <input
+                    type="date"
+                    className="filter-input"
+                    value={fichaFirstSessionDate}
+                    onChange={(e) => setFichaFirstSessionDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Button
+              variant="primary"
+              onClick={() => handleSavePatientFicha?.({
+                name: fichaName,
+                initialRate: fichaInitialRate,
+                firstSessionDate: fichaFirstSessionDate,
+                packageSize: fichaPackageSize
+              })}
+              disabled={savingNotes}
+              style={{ marginTop: '0.15rem' }}
+            >
+              {savingNotes ? 'Salvando...' : '💾 Salvar Ficha'}
+            </Button>
+          </div>
+
+          {/* 4. Card: Supervisão (Exibe apenas as 2 últimas; clique abre todas) */}
+          <div
+            className="card"
+            onClick={() => setShowSupervisionsModal(true)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.85rem',
+              padding: '1.15rem',
+              minHeight: 'auto',
+              cursor: 'pointer'
+            }}
+            title="Clique no card para ver todas as supervisões deste analisando"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.45rem' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>
+                Supervisão
+              </h3>
+              <span style={{ fontSize: '0.72rem', color: 'var(--accent-primary)', fontWeight: '600' }}>
+                Ver todas ({sortedSupervisions.length})
+              </span>
+            </div>
+
+            <form
+              onSubmit={handleAddSupervision}
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-end', flexWrap: 'wrap' }}
+            >
+              <div className="filter-group" style={{ flex: '1 1 160px' }}>
+                <label className="filter-label">Data da Última Supervisão</label>
+                <input
+                  type="date"
+                  className="filter-input"
+                  value={newSupervisionDate}
+                  onChange={(e) => setNewSupervisionDate(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" variant="success" style={{ padding: '0.55rem 0.9rem' }}>
+                + Adicionar
+              </Button>
+            </form>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.65rem' }}>
+              {lastTwoSupervisions.length === 0 ? (
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.25rem 0' }}>
+                  Nenhuma supervisão registrada.
+                </span>
+              ) : (
+                lastTwoSupervisions.map((sup, index) => (
+                  <div
+                    key={sup.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: index === 0 ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '8px',
+                      border: index === 0 ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid var(--border-color)',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <strong style={{ color: index === 0 ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
+                        📅 {formatDate(sup.date)}
+                      </strong>
+                      {index === 0 && (
+                        <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: '700' }}>
+                          Última
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSupervision(sup.id);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-danger)',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        padding: '0.15rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px'
+                      }}
+                      title="Excluir Supervisão"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))
+              )}
+              {sortedSupervisions.length > 2 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', textAlign: 'center', marginTop: '0.2rem', fontWeight: '600' }}>
+                  Clique para ver todas as {sortedSupervisions.length} supervisões →
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Modal com Todas as Supervisões do Analisando */}
+      {showSupervisionsModal && (
+        <div className="modal-overlay" onClick={() => setShowSupervisionsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0 }}>
+                Histórico de Supervisões - {hideValues ? 'Analisando Oculto' : selectedPatient.name}
+              </h3>
+              <button
+                onClick={() => setShowSupervisionsModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.5rem', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {sortedSupervisions.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem 0' }}>
+                Nenhuma supervisão registrada para este analisando.
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '360px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+                {sortedSupervisions.map((sup, index) => (
+                  <div
+                    key={sup.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: index === 0 ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      padding: '0.65rem 0.85rem',
+                      borderRadius: '8px',
+                      border: index === 0 ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid var(--border-color)',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <strong style={{ color: index === 0 ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
+                        📅 {formatDate(sup.date)}
+                      </strong>
+                      {index === 0 && (
+                        <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-primary)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: '700' }}>
+                          Última
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSupervision(sup.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-danger)',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        padding: '0.2rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '4px'
+                      }}
+                      title="Excluir Supervisão"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+              <Button variant="secondary" onClick={() => setShowSupervisionsModal(false)}>
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

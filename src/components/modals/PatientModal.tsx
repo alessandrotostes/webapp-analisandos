@@ -49,9 +49,10 @@ export function PatientModal({
             >
               <option value="particular">Particular</option>
               <option value="social_clinic">Clínica Social</option>
-              <option value="zenklub">Zenklub</option>
               <option value="integrando_ser">Integrando Ser</option>
               <option value="training_student">Aluno em Formação</option>
+              <option value="supervision">Supervisão</option>
+              {patientForm.origin === 'zenklub' && <option value="zenklub">Zenklub</option>}
             </select>
           </div>
 
@@ -68,13 +69,31 @@ export function PatientModal({
           </div>
 
           <div className="filter-group">
-            <label className="filter-label">Valor Padrão por Sessão (R$)</label>
+            <label className="filter-label">Valor Inicial / Padrão por Sessão (R$)</label>
             <input
               type="number"
+              step="0.01"
               className="filter-input"
               required
               value={patientForm.defaultRate !== undefined ? patientForm.defaultRate : ''}
-              onChange={(e) => setPatientForm(prev => ({ ...prev, defaultRate: Number(e.target.value) }))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setPatientForm(prev => ({
+                  ...prev,
+                  defaultRate: val,
+                  ...(!isEditing ? { initialRate: val } : {})
+                }));
+              }}
+            />
+          </div>
+
+          <div className="filter-group">
+            <label className="filter-label">Data da Primeira Sessão</label>
+            <input
+              type="date"
+              className="filter-input"
+              value={patientForm.firstSessionDate || ''}
+              onChange={(e) => setPatientForm(prev => ({ ...prev, firstSessionDate: e.target.value }))}
             />
           </div>
 
@@ -89,6 +108,19 @@ export function PatientModal({
               <option value="paused">Pausado</option>
               <option value="ended">Encerrado</option>
             </select>
+          </div>
+
+          <div className="filter-group">
+            <label className="filter-label">Sessões por Pacote (Ciclo)</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              className="filter-input"
+              placeholder="Ex: 4"
+              value={patientForm.packageSize || 4}
+              onChange={(e) => setPatientForm(prev => ({ ...prev, packageSize: Number(e.target.value) || 4 }))}
+            />
           </div>
 
           <div className="filter-group">

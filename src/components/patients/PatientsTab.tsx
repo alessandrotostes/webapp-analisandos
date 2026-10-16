@@ -28,10 +28,22 @@ export function PatientsTab({
   formatCurrency
 }: PatientsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'particular' | 'social_clinic' | 'integrando_ser' | 'training_student' | 'supervision'>('all');
 
-  const displayedPatients = patients
-    .filter(p => p.status === patientStatusFilterTab)
+  const statusPatients = patients.filter(p => p.status === patientStatusFilterTab);
+
+  const displayedPatients = statusPatients
+    .filter(p => categoryFilter === 'all' || p.origin === categoryFilter)
     .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const categories = [
+    { key: 'all', label: 'Todas as Categorias' },
+    { key: 'particular', label: 'Particular' },
+    { key: 'social_clinic', label: 'Clínica Social' },
+    { key: 'integrando_ser', label: 'Integrando Ser' },
+    { key: 'training_student', label: 'Aluno em Formação' },
+    { key: 'supervision', label: 'Supervisão' }
+  ] as const;
 
   return (
     <div>
@@ -115,14 +127,61 @@ export function PatientsTab({
             🔴 Encerrados ({patients.filter(p => p.status === 'ended').length})
           </button>
         </div>
+
+        {/* Filtro por Categoria / Origem */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Filtrar por Categoria:</span>
+            {categories.map((cat) => {
+              const count = cat.key === 'all'
+                ? statusPatients.length
+                : statusPatients.filter(p => p.origin === cat.key).length;
+              const isSelected = categoryFilter === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => setCategoryFilter(cat.key)}
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '999px',
+                    cursor: 'pointer',
+                    border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                    background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                >
+                  {cat.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {loadingPatients ? (
         <p style={{ color: 'var(--text-muted)' }}>Carregando dados dos analisandos...</p>
       ) : displayedPatients.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          Nenhum analisando encontrado{searchQuery ? ` para "${searchQuery}"` : ''}.
-        </p>
+        <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '10px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', margin: '0 0 0.75rem 0' }}>
+            Nenhum analisando encontrado{categoryFilter !== 'all' ? ` na categoria "${categories.find(c => c.key === categoryFilter)?.label}"` : ''}{searchQuery ? ` para "${searchQuery}"` : ''}.
+          </p>
+          {(categoryFilter !== 'all' || searchQuery) && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setCategoryFilter('all');
+                setSearchQuery('');
+              }}
+              style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}
+            >
+              Limpar Filtros
+            </Button>
+          )}
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '1.25rem' }}>
           {displayedPatients.map((p) => (
@@ -136,7 +195,14 @@ export function PatientsTab({
                 </div>
 
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1rem', marginTop: '0.5rem' }}>
-                  <div><strong>Origem:</strong> <span style={{ textTransform: 'uppercase' }}>{p.origin.replace('_', ' ')}</span></div>
+                  <div><strong>Origem:</strong> <span style={{ textTransform: 'uppercase' }}>{{
+                    particular: 'Particular',
+                    social_clinic: 'Clínica Social',
+                    integrando_ser: 'Integrando Ser',
+                    training_student: 'Aluno em Formação',
+                    supervision: 'Supervisão',
+                    zenklub: 'Zenklub'
+                  }[p.origin] || p.origin.replace('_', ' ')}</span></div>
                   <div><strong>Formato:</strong> <span style={{ textTransform: 'uppercase' }}>{p.format}</span></div>
                   <div><strong>Valor da Sessão:</strong> {formatCurrency(p.defaultRate)}</div>
                   {p.phone && <div><strong>Contato:</strong> {p.phone}</div>}

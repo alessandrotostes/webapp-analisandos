@@ -4,10 +4,15 @@ export interface RateReadjustment {
   value: number;
 }
 
+export interface PatientSupervision {
+  id: string;
+  date: string;
+}
+
 export interface Patient {
   id?: string;
   name: string;
-  origin: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student';
+  origin: 'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student' | 'supervision';
   format: 'presencial' | 'online';
   defaultRate: number;     // Valor cobrado por sessão (R$)
   status: 'active' | 'paused' | 'ended';
@@ -15,7 +20,11 @@ export interface Patient {
   email?: string;
   notes?: string;
   rateReadjustments?: RateReadjustment[];
+  supervisions?: PatientSupervision[];
   lastSessionDate?: string;
+  initialRate?: number;
+  firstSessionDate?: string;
+  packageSize?: number; // Tamanho padrão do ciclo de pacote (ex: 4 sessões)
 }
 
 export interface RentLog {
@@ -38,6 +47,8 @@ export interface Session {
   sessionValue?: number;   // Valor cobrado na sessão (R$)
   isPaid?: boolean;        // Pago ou Não Pago
   isPackage?: boolean;     // Sessão paga via pacote
+  packageSessionIndex?: number; // Número da sessão dentro do pacote (ex: 1, 2, 3, 4)
+  packageTotalSessions?: number; // Total de sessões do pacote (ex: 2, 3, 4)
   isCancelled?: boolean;   // Sessão cancelada
   isCharged?: boolean;     // Sessão cobrada (mesmo se cancelada)
   isParentsSession?: boolean; // Sessão com os Pais do paciente

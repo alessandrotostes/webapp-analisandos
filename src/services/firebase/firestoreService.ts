@@ -4,6 +4,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   doc,
   query,
   where,
@@ -229,4 +230,26 @@ export async function getUpcomingSessions(todayStr: string, nextWeekStr: string)
     id: docSnapshot.id,
     ...(docSnapshot.data() as Omit<Session, 'id'>)
   }));
+}
+
+// ==========================================
+// SERVIÇOS DE RESERVA DE SUPERVISÃO SEMANAL
+// ==========================================
+
+export async function getSupervisionWeekStatuses(): Promise<Record<string, { isPaid?: boolean; isCancelled?: boolean }>> {
+  const ref = collection(db, 'supervision_logs');
+  const snapshot = await getDocs(ref);
+  const result: Record<string, { isPaid?: boolean; isCancelled?: boolean }> = {};
+  snapshot.docs.forEach((d) => {
+    result[d.id] = d.data() as { isPaid?: boolean; isCancelled?: boolean };
+  });
+  return result;
+}
+
+export async function saveSupervisionWeekStatus(
+  dateStr: string,
+  status: { isPaid?: boolean; isCancelled?: boolean }
+): Promise<void> {
+  const docRef = doc(db, 'supervision_logs', dateStr);
+  await setDoc(docRef, status, { merge: true });
 }

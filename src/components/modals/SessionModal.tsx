@@ -25,6 +25,10 @@ export function SessionModal({
 }: SessionModalProps) {
   if (!isOpen) return null;
 
+  const activePatients = patients
+    .filter(p => p.status === 'active')
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <form onSubmit={onSubmit} className="modal-content">
@@ -43,7 +47,7 @@ export function SessionModal({
                 value={sessionForm.patientName || ''}
                 onChange={(e) => onPatientChange(e.target.value)}
               >
-                {patients.map(p => (
+                {activePatients.map(p => (
                   <option key={p.id} value={p.name}>{p.name}</option>
                 ))}
               </select>
@@ -82,9 +86,10 @@ export function SessionModal({
             >
               <option value="particular">Particular</option>
               <option value="social_clinic">Clínica Social</option>
-              <option value="training_student">Aluno</option>
               <option value="integrando_ser">Integrando Ser</option>
-              <option value="zenklub">Zenklub</option>
+              <option value="training_student">Aluno em Formação</option>
+              <option value="supervision">Supervisão</option>
+              {sessionForm.patientType === 'zenklub' && <option value="zenklub">Zenklub</option>}
             </select>
           </div>
 
@@ -108,18 +113,106 @@ export function SessionModal({
                 value={sessionForm.isPackage ? 'pacote' : (sessionForm.isPaid ? 'pago' : 'não_pago')}
                 onChange={(e) => {
                   const val = e.target.value;
+                  const isPkg = val === 'pacote';
                   setSessionForm(prev => ({
                     ...prev,
                     isPaid: val === 'pago',
-                    isPackage: val === 'pacote'
+                    isPackage: isPkg,
+                    // Mantém packageTotalSessions se já tinha
+                    packageTotalSessions: isPkg ? (prev.packageTotalSessions || 4) : prev.packageTotalSessions,
+                    packageSessionIndex: isPkg ? (prev.packageSessionIndex || 1) : prev.packageSessionIndex
                   }));
                 }}
               >
                 <option value="não_pago">❌ Não Pago / Pendente</option>
                 <option value="pago">✅ Pago</option>
-                <option value="pacote">📦 Pacote</option>
+                <option value="pacote">📦 Pacote (Pago)</option>
               </select>
             </div>
+          </div>
+
+          {/* Configuração de Pacote (disponível para marcar pacote com 2, 3 ou 4 sessões, mesmo antes de pagar) */}
+          <div
+            style={{
+              background: (sessionForm.isPackage || (sessionForm.packageTotalSessions && sessionForm.packageTotalSessions > 0)) ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '0.75rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input
+                  type="checkbox"
+                  checked={!!sessionForm.packageTotalSessions}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setSessionForm(prev => ({
+                      ...prev,
+                      packageTotalSessions: checked ? 4 : undefined,
+                      packageSessionIndex: checked ? 1 : undefined
+                    }));
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                📦 Esta sessão faz parte de um Pacote
+              </label>
+              {sessionForm.packageTotalSessions && (
+                <span style={{ fontSize: '0.72rem', color: '#a78bfa', fontWeight: 600 }}>
+                  {sessionForm.isPackage ? 'Pago via Pacote' : 'Aguardando Pagamento'}
+                </span>
+              )}
+            </div>
+
+            {sessionForm.packageTotalSessions && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: '0.75rem',
+                  paddingTop: '0.4rem',
+                  borderTop: '1px dashed rgba(139, 92, 246, 0.3)'
+                }}
+              >
+                <div className="filter-group">
+                  <label className="filter-label" style={{ color: '#a78bfa' }}>Total de Sessões do Pacote</label>
+                  <select
+                    className="filter-select"
+                    value={sessionForm.packageTotalSessions || 4}
+                    onChange={(e) => {
+                      const total = Number(e.target.value);
+                      setSessionForm(prev => ({
+                        ...prev,
+                        packageTotalSessions: total,
+                        packageSessionIndex: Math.min(prev.packageSessionIndex || 1, total)
+                      }));
+                    }}
+                  >
+                    <option value={2}>2 Sessões</option>
+                    <option value={3}>3 Sessões</option>
+                    <option value={4}>4 Sessões</option>
+                  </select>
+                </div>
+
+                <div className="filter-group">
+                  <label className="filter-label" style={{ color: '#a78bfa' }}>Número desta Sessão</label>
+                  <select
+                    className="filter-select"
+                    value={sessionForm.packageSessionIndex || 1}
+                    onChange={(e) => setSessionForm(prev => ({ ...prev, packageSessionIndex: Number(e.target.value) }))}
+                  >
+                    {Array.from({ length: sessionForm.packageTotalSessions || 4 }, (_, i) => i + 1).map((num) => (
+                      <option key={num} value={num}>
+                        Sessão {num} de {sessionForm.packageTotalSessions || 4}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="filter-group">

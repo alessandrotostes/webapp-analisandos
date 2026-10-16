@@ -9,10 +9,12 @@ import {
   addSession,
   updateSession,
   deleteSession,
-  getUpcomingSessions
+  getUpcomingSessions,
+  getSupervisionWeekStatuses,
+  saveSupervisionWeekStatus
 } from './services/firebase/firestoreService';
 import { Button } from './components/ui/Button';
-import type { Session, Patient, RateReadjustment } from './types';
+import type { Session, Patient, RateReadjustment, PatientSupervision } from './types';
 import { LayoutDashboard, Users, Landmark, Plus, Eye, EyeOff, LogOut } from 'lucide-react';
 import {
   GoogleAuthProvider,
@@ -323,6 +325,15 @@ export default function App() {
     });
   }, []);
 
+  // Toast flutuante para avisos de sucesso discretos
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(prev => prev === msg ? null : prev);
+    }, 3000);
+  }, []);
+
   // Obter data atual do sistema para inicialização dinâmica
   const initDate = new Date();
   const currentYear = initDate.getFullYear();
@@ -346,7 +357,8 @@ export default function App() {
     status: 'active',
     phone: '',
     email: '',
-    notes: ''
+    notes: '',
+    packageSize: 4
   });
 
   const [showSessionModal, setShowSessionModal] = useState(false);
@@ -385,7 +397,7 @@ export default function App() {
   const [generalNotesText, setGeneralNotesText] = useState('');
   const [generalPhoneText, setGeneralPhoneText] = useState('');
   const [generalEmailText, setGeneralEmailText] = useState('');
-  const [generalOriginText, setGeneralOriginText] = useState<'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student'>('particular');
+  const [generalOriginText, setGeneralOriginText] = useState<'particular' | 'social_clinic' | 'zenklub' | 'integrando_ser' | 'training_student' | 'supervision'>('particular');
   const [generalDefaultRate, setGeneralDefaultRate] = useState<number>(0);
   const [savingNotes, setSavingNotes] = useState(false);
 
@@ -395,6 +407,57 @@ export default function App() {
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [numSupervisions, setNumSupervisions] = useState(2);
   const [costPerSupervision, setCostPerSupervision] = useState(180);
+  const [supervisionWeeksStatus, setSupervisionWeeksStatus] = useState<Record<string, { isPaid?: boolean; isCancelled?: boolean }>>(() => {
+    try {
+      const saved = localStorage.getItem('supervision_weeks_status');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('supervision_weeks_status', JSON.stringify(supervisionWeeksStatus));
+  }, [supervisionWeeksStatus]);
+
+  const loadSupervisionWeeksStatus = useCallback(async () => {
+    try {
+      const remote = await getSupervisionWeekStatuses();
+      if (remote && Object.keys(remote).length > 0) {
+        setSupervisionWeeksStatus(prev => ({ ...prev, ...remote }));
+      }
+    } catch {
+      // Fallback para localStorage caso a coleção ainda não tenha permissão ou esteja offline
+    }
+  }, []);
+
+  const handleToggleSupervisionPaid = async (dateStr: string, currentVal: boolean) => {
+    const newVal = !currentVal;
+    const updatedEntry = { ...supervisionWeeksStatus[dateStr], isPaid: newVal };
+    setSupervisionWeeksStatus(prev => ({
+      ...prev,
+      [dateStr]: updatedEntry
+    }));
+    try {
+      await saveSupervisionWeekStatus(dateStr, updatedEntry);
+    } catch {
+      // Mantém salvo no localStorage
+    }
+  };
+
+  const handleToggleSupervisionCancelled = async (dateStr: string, currentVal: boolean) => {
+    const newVal = !currentVal;
+    const updatedEntry = { ...supervisionWeeksStatus[dateStr], isCancelled: newVal };
+    setSupervisionWeeksStatus(prev => ({
+      ...prev,
+      [dateStr]: updatedEntry
+    }));
+    try {
+      await saveSupervisionWeekStatus(dateStr, updatedEntry);
+    } catch {
+      // Mantém salvo no localStorage
+    }
+  };
 
   const loadAllSessionsForSelectedMonth = useCallback(async () => {
     setLoadingSessions(true);
@@ -403,6 +466,19 @@ export default function App() {
       const result = await getSessions({
         pageSize: 2000
       });
+
+      // Migra sessões de outubro/2026 em diante que estavam com patientType === 'zenklub' para 'social_clinic'
+      const octZenklubSessions = result.data.filter(
+        s => s.date && s.date >= '2026-10-01' && s.patientType === 'zenklub'
+      );
+      if (octZenklubSessions.length > 0) {
+        await Promise.all(
+          octZenklubSessions.map(s => {
+            s.patientType = 'social_clinic';
+            return s.id ? updateSession(s.id, { patientType: 'social_clinic' }) : Promise.resolve();
+          })
+        );
+      }
 
       setAllSessions(result.data);
     } catch (err: any) {
@@ -415,8 +491,9 @@ export default function App() {
   useEffect(() => {
     if (user) {
       loadAllSessionsForSelectedMonth();
+      loadSupervisionWeeksStatus();
     }
-  }, [user, loadAllSessionsForSelectedMonth]);
+  }, [user, loadAllSessionsForSelectedMonth, loadSupervisionWeeksStatus]);
 
   const loadPatientDashboardSessions = useCallback(async (patientName: string) => {
     setLoadingDashboardSessions(true);
@@ -434,6 +511,53 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (patients.length === 0 || allSessions.length === 0) return;
+
+    const toUpdate: { id: string; updates: Partial<Patient> }[] = [];
+
+    patients.forEach(p => {
+      if (!p.id) return;
+      const pSessions = allSessions
+        .filter(s => s.patientName === p.name && s.date && (!s.isCancelled || s.isCharged))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const earliest = pSessions[0];
+
+      const computedFirstDate = p.firstSessionDate || earliest?.date || '';
+      const computedInitialRate = p.initialRate !== undefined
+        ? p.initialRate
+        : (earliest?.sessionValue !== undefined && earliest.sessionValue > 0 ? earliest.sessionValue : p.defaultRate);
+
+      const needsDateUpdate = !p.firstSessionDate && !!computedFirstDate;
+      const needsRateUpdate = p.initialRate === undefined && computedInitialRate !== undefined;
+
+      if (needsDateUpdate || needsRateUpdate) {
+        toUpdate.push({
+          id: p.id,
+          updates: {
+            ...(needsDateUpdate ? { firstSessionDate: computedFirstDate } : {}),
+            ...(needsRateUpdate ? { initialRate: computedInitialRate } : {})
+          }
+        });
+      }
+    });
+
+    if (toUpdate.length > 0) {
+      setPatients(prev =>
+        prev.map(p => {
+          const match = toUpdate.find(u => u.id === p.id);
+          return match ? { ...p, ...match.updates } : p;
+        })
+      );
+      setSelectedPatientForDashboard(prev => {
+        if (!prev?.id) return prev;
+        const match = toUpdate.find(u => u.id === prev.id);
+        return match ? { ...prev, ...match.updates } : prev;
+      });
+      Promise.all(toUpdate.map(u => updatePatient(u.id, u.updates))).catch(() => {});
+    }
+  }, [patients, allSessions]);
+
+  useEffect(() => {
     if (selectedPatientForDashboard) {
       loadPatientDashboardSessions(selectedPatientForDashboard.name);
       setGeneralNotesText(selectedPatientForDashboard.notes || '');
@@ -446,7 +570,32 @@ export default function App() {
     }
   }, [selectedPatientForDashboard, loadPatientDashboardSessions]);
 
-
+  const handleSavePatientFicha = async (fichaData: { name: string; initialRate: number; firstSessionDate: string; packageSize?: number }) => {
+    if (!selectedPatientForDashboard?.id || !fichaData.name.trim()) return;
+    setSavingNotes(true);
+    try {
+      const oldName = selectedPatientForDashboard.name;
+      const newName = fichaData.name.trim();
+      if (oldName !== newName) {
+        await updatePatientNameInRelatedDocs(oldName, newName);
+      }
+      const updates: Partial<Patient> = {
+        name: newName,
+        initialRate: fichaData.initialRate,
+        firstSessionDate: fichaData.firstSessionDate,
+        packageSize: fichaData.packageSize || 4
+      };
+      await updatePatient(selectedPatientForDashboard.id, updates);
+      setSelectedPatientForDashboard(prev => prev ? { ...prev, ...updates } : null);
+      loadPatientsData();
+      loadAllSessionsForSelectedMonth();
+      showToast("Ficha do analisando salva com sucesso!");
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar ficha do analisando: " + err.message);
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   const handleSaveGeneralPatientDetails = async () => {
     if (!selectedPatientForDashboard?.id) return;
@@ -462,11 +611,7 @@ export default function App() {
       await updatePatient(selectedPatientForDashboard.id, updates);
       setSelectedPatientForDashboard(prev => prev ? { ...prev, ...updates } : null);
       loadPatientsData();
-      showConfirm(
-        "Ficha do analisando atualizada com sucesso!",
-        () => {},
-        { isAlert: true, title: 'Sucesso' }
-      );
+      showToast("Detalhes do paciente salvos com sucesso!");
     } catch (err: any) {
       setErrorMsg("Erro ao atualizar ficha do analisando: " + err.message);
     } finally {
@@ -497,6 +642,18 @@ export default function App() {
     }
   };
 
+  const handleUpdatePatientSupervisions = async (supervisions: PatientSupervision[]) => {
+    if (!selectedPatientForDashboard?.id) return;
+    try {
+      await updatePatient(selectedPatientForDashboard.id, { supervisions });
+      setSelectedPatientForDashboard(prev => prev ? { ...prev, supervisions } : null);
+      loadPatientsData();
+    } catch (err: any) {
+      setErrorMsg("Erro ao atualizar histórico de supervisões: " + err.message);
+      throw err;
+    }
+  };
+
   // ==========================================
   // FUNÇÕES DE DISPARO DE DADOS
   // ==========================================
@@ -505,19 +662,31 @@ export default function App() {
     setLoadingUpcomingSessions(true);
     try {
       const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const todayStr = `${year}-${month}-${day}`;
+      const dayOfWeek = today.getDay();
+      const saturdayStart = new Date(today);
+      let diffToSaturday = 0;
+      if (dayOfWeek === 6) {
+        diffToSaturday = 0;
+      } else if (dayOfWeek === 0) {
+        diffToSaturday = -1;
+      } else {
+        diffToSaturday = -(dayOfWeek + 1);
+      }
+      saturdayStart.setDate(today.getDate() + diffToSaturday);
 
-      const future = new Date();
-      future.setDate(today.getDate() + 7);
-      const fYear = future.getFullYear();
-      const fMonth = String(future.getMonth() + 1).padStart(2, '0');
-      const fDay = String(future.getDate()).padStart(2, '0');
-      const futureStr = `${fYear}-${fMonth}-${fDay}`;
+      const monday = new Date(saturdayStart);
+      monday.setDate(saturdayStart.getDate() + 2);
+      const friday = new Date(saturdayStart);
+      friday.setDate(saturdayStart.getDate() + 6);
 
-      const data = await getUpcomingSessions(todayStr, futureStr);
+      const fmt = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dd}`;
+      };
+
+      const data = await getUpcomingSessions(fmt(monday), fmt(friday));
       setUpcomingSessions(data);
     } catch (err: any) {
       console.error("Erro ao carregar próximas sessões:", err);
@@ -530,6 +699,21 @@ export default function App() {
     setLoadingPatients(true);
     try {
       const data = await getPatients();
+      // Migra automaticamente todos os pacientes ativos da categoria Zenklub para Clínica Social
+      const activeZenklub = data.filter(p => p.status === 'active' && p.origin === 'zenklub');
+      if (activeZenklub.length > 0) {
+        await Promise.all(
+          activeZenklub.map(p => {
+            p.origin = 'social_clinic';
+            return p.id ? updatePatient(p.id, { origin: 'social_clinic' }) : Promise.resolve();
+          })
+        );
+        setSelectedPatientForDashboard(prev =>
+          prev && prev.status === 'active' && prev.origin === 'zenklub'
+            ? { ...prev, origin: 'social_clinic' }
+            : prev
+        );
+      }
       setPatients(data);
     } catch (err: any) {
       setErrorMsg("Erro ao buscar analisandos: " + err.message);
@@ -560,10 +744,13 @@ export default function App() {
         origin: patient.origin,
         format: patient.format,
         defaultRate: patient.defaultRate,
+        initialRate: patient.initialRate ?? patient.defaultRate,
+        firstSessionDate: patient.firstSessionDate || '',
         status: patient.status,
         phone: patient.phone || '',
         email: patient.email || '',
-        notes: patient.notes || ''
+        notes: patient.notes || '',
+        packageSize: patient.packageSize || 4
       });
     } else {
       setEditingPatient(null);
@@ -572,10 +759,13 @@ export default function App() {
         origin: 'particular',
         format: 'online',
         defaultRate: 150,
+        initialRate: 150,
+        firstSessionDate: '',
         status: 'active',
         phone: '',
         email: '',
-        notes: ''
+        notes: '',
+        packageSize: 4
       });
     }
     setShowPatientModal(true);
@@ -637,13 +827,20 @@ export default function App() {
         paymentInfo: session.paymentInfo || '',
         duration: session.duration,
         modality: (session.modality === 'presencial' || session.modality === 'online') ? session.modality : (matchedPatient?.format || 'online'),
-        patientType: session.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student'].includes(session.modality) ? session.modality : (matchedPatient?.origin || 'particular')),
+        patientType: session.patientType || (['particular', 'social_clinic', 'zenklub', 'integrando_ser', 'training_student', 'supervision'].includes(session.modality) ? session.modality : (matchedPatient?.origin || 'particular')),
         sessionValue: session.sessionValue !== undefined ? session.sessionValue : 0,
         isPaid: session.isPaid !== undefined ? session.isPaid : false,
-        isPackage: session.isPackage !== undefined ? session.isPackage : false
+        isPackage: session.isPackage !== undefined ? session.isPackage : false,
+        packageSessionIndex: session.packageSessionIndex,
+        packageTotalSessions: session.packageTotalSessions
       });
     } else {
-      const firstPat = selectedPatientForDashboard || patients[0];
+      const activePatientsList = patients
+        .filter(p => p.status === 'active')
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const firstPat = (selectedPatientForDashboard && selectedPatientForDashboard.status === 'active'
+        ? selectedPatientForDashboard
+        : null) || activePatientsList[0];
       setEditingSession(null);
       setSessionForm({
         patientName: firstPat?.name || '',
@@ -654,7 +851,9 @@ export default function App() {
         patientType: firstPat?.origin || 'particular',
         sessionValue: firstPat?.defaultRate || 150,
         isPaid: false,
-        isPackage: false
+        isPackage: false,
+        packageTotalSessions: firstPat?.packageSize || 4,
+        packageSessionIndex: 1
       });
     }
     setShowSessionModal(true);
@@ -736,29 +935,49 @@ export default function App() {
   const handleToggleSessionPaymentStatus = async (session: Session) => {
     if (!session.id) return;
     try {
-      // Ciclo: Não Pago → Pago → Pacote → Não Pago
-      let newIsPaid: boolean;
-      let newIsPackage: boolean;
+      let updates: Partial<Session> = {};
 
       if (!session.isPaid && !session.isPackage) {
-        // Não Pago → Pago
-        newIsPaid = true;
-        newIsPackage = false;
+        if (session.packageTotalSessions && session.packageTotalSessions > 0) {
+          // Sessão de pacote pré-configurada não paga → Pacote (paga)
+          updates = {
+            isPaid: false,
+            isPackage: true,
+            packageTotalSessions: session.packageTotalSessions,
+            packageSessionIndex: session.packageSessionIndex || 1
+          };
+        } else {
+          // Sessão comum não paga → Paga
+          updates = { isPaid: true, isPackage: false };
+        }
       } else if (session.isPaid && !session.isPackage) {
         // Pago → Pacote
-        newIsPaid = false;
-        newIsPackage = true;
+        const patientSessions = patientDashboardSessions
+          .filter(s => (!s.isCancelled || s.isCharged) && s.date && s.date <= session.date)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const prevPackageCount = patientSessions.filter(s => s.isPackage && s.id !== session.id).length;
+        const total = session.packageTotalSessions || selectedPatientForDashboard?.packageSize || 4;
+        const index = session.packageSessionIndex || ((prevPackageCount % total) + 1);
+
+        updates = {
+          isPaid: false,
+          isPackage: true,
+          packageTotalSessions: total,
+          packageSessionIndex: index
+        };
       } else {
-        // Pacote → Não Pago
-        newIsPaid = false;
-        newIsPackage = false;
+        // Pacote (pago) → Não Pago (preservando contadores do pacote caso tenha sido configurado)
+        updates = {
+          isPaid: false,
+          isPackage: false
+        };
       }
 
-      await updateSession(session.id, { isPaid: newIsPaid, isPackage: newIsPackage });
+      await updateSession(session.id, updates);
 
       // Atualiza o estado das sessões no dashboard (otimista)
       setPatientDashboardSessions(prev =>
-        prev.map(s => s.id === session.id ? { ...s, isPaid: newIsPaid, isPackage: newIsPackage } : s)
+        prev.map(s => s.id === session.id ? { ...s, ...updates } : s)
       );
 
       loadAllSessionsForSelectedMonth();
@@ -836,6 +1055,7 @@ export default function App() {
 
       loadAllSessionsForSelectedMonth();
       loadUpcomingSessionsData();
+      showToast("Anotações da sessão salvas com sucesso!");
     } catch (err: any) {
       setErrorMsg("Erro ao atualizar anotações da sessão: " + err.message);
     }
@@ -954,6 +1174,7 @@ export default function App() {
       'SETEMBRO': 9, 'OUTUBRO': 10, 'NOVEMBRO': 11, 'DEZEMBRO': 12
     };
     const M = monthNumMap[monthName] || 1;
+    if (year > 2026 || (year === 2026 && M >= 10)) return 0;
 
     // Ciclo do dashboard do mês M: de 24 do mês M-1 a 23 do mês M
     let endMonthIndex = M;
@@ -1096,7 +1317,8 @@ export default function App() {
   const selectedMonthPrefix = selectedMonthNum ? `${selectedYear}-${selectedMonthNum}` : null;
 
   const nonZenklubMonthSessions = allSessions.filter(s => {
-    const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+    const isBeforeOct2026 = !s.date || s.date < '2026-10-01';
+    const isZenklub = isBeforeOct2026 && (s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub')));
     if (isZenklub) return false;
     return selectedMonthPrefix ? s.date && s.date.startsWith(selectedMonthPrefix) && (!s.isCancelled || s.isCharged) : false;
   });
@@ -1220,8 +1442,35 @@ export default function App() {
     };
   }).filter(r => r.sessionsCount > 0); // Exibe apenas se teve sessão no mês
 
+  // Sextas-feiras do mês vigente para a Reserva de Supervisão (360,00 dividido por 4 ou 5 semanas)
+  const supervisionWeeks = (() => {
+    const mNum = Number(monthNumForRepasse || '10');
+    const daysInMonth = new Date(selectedYear, mNum, 0).getDate();
+    const fridays: string[] = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(selectedYear, mNum - 1, day, 12, 0, 0);
+      if (d.getDay() === 5) {
+        const mm = String(mNum).padStart(2, '0');
+        const dd = String(day).padStart(2, '0');
+        fridays.push(`${selectedYear}-${mm}-${dd}`);
+      }
+    }
+    const perWeekValue = fridays.length > 0 ? 360.00 / fridays.length : 90.00;
+    return fridays.map(dateStr => {
+      const st = supervisionWeeksStatus[dateStr] || {};
+      return {
+        date: dateStr,
+        value: perWeekValue,
+        isPaid: !!st.isPaid,
+        isCancelled: !!st.isCancelled
+      };
+    });
+  })();
+
   const privateTotalSessions = privateRows.reduce((sum, r) => sum + r.sessionsCount, 0);
-  const privateTotalSupervision = privateTotalSessions > 0 ? 360.00 : 0.00;
+  const privateTotalSupervision = privateTotalSessions > 0
+    ? supervisionWeeks.filter(w => !w.isCancelled).reduce((sum, w) => sum + w.value, 0)
+    : 0.00;
   const privateTotalGross = privateRows.reduce((sum, r) => sum + r.gross, 0);
   const privateTotalNet = privateTotalGross - privateTotalSupervision;
 
@@ -1314,7 +1563,8 @@ export default function App() {
     const nonZenklubAnnualPaidSessions = allSessions.filter(s => {
       if (!s.date) return false;
       const [yearStr, monthStr] = s.date.split('-');
-      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub'));
+      const isBeforeOct2026 = s.date < '2026-10-01';
+      const isZenklub = isBeforeOct2026 && (s.patientType === 'zenklub' || (s.patientType === undefined && (zenklubPatientNames.has(s.patientName) || s.modality === 'zenklub')));
       if (isZenklub) return false;
       return Number(yearStr) === selectedYear && monthsToIncludeNums.has(monthStr) && (s.isPaid === true || s.isPackage === true) && (!s.isCancelled || s.isCharged);
     });
@@ -1415,8 +1665,9 @@ export default function App() {
 
     // Filtrar sessões alvo
     const targetSessions = allSessions.filter(s => {
-      // Excluir Zenklub
-      const isZenklub = s.patientType === 'zenklub' || (s.patientType === undefined && zenklubPatientNamesLocal.has(s.patientName));
+      // Excluir Zenklub apenas antes de outubro/2026
+      const isBeforeOct2026 = !s.date || s.date < '2026-10-01';
+      const isZenklub = isBeforeOct2026 && (s.patientType === 'zenklub' || (s.patientType === undefined && zenklubPatientNamesLocal.has(s.patientName)));
       if (isZenklub) return false;
 
       // Excluir sessões canceladas não cobradas
@@ -1516,8 +1767,18 @@ export default function App() {
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.5rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', marginRight: '0.25rem' }}>Período:</span>
                 <select className="filter-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ minWidth: '90px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
-                  <option value="2025" style={{ color: 'black' }}>2025</option>
-                  <option value="2026" style={{ color: 'black' }}>2026</option>
+                  {(() => {
+                    const currentYear = Math.max(new Date().getFullYear(), 2026);
+                    const startYear = 2025;
+                    const endYear = currentYear + 1;
+                    const years: number[] = [];
+                    for (let y = startYear; y <= endYear; y++) {
+                      years.push(y);
+                    }
+                    return years.map(y => (
+                      <option key={y} value={y} style={{ color: 'black' }}>{y}</option>
+                    ));
+                  })()}
                 </select>
                 <select className="filter-select" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ minWidth: '120px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
                   <option value="" style={{ color: 'black' }}>Ano Inteiro</option>
@@ -1643,123 +1904,134 @@ export default function App() {
 
             {/* ABA 1: DASHBOARD */}
             {activeTab === 'dashboard' && (
-              <DashboardTab
-                hideValues={hideValues}
-                totalMetrics={totalMetrics}
-                rentTotalPaid={presencialTotalRentPaid}
-                patients={patients}
-                upcomingSessions={upcomingSessions}
-                loadingUpcomingSessions={loadingUpcomingSessions}
-                loadingSessions={loadingSessions}
-                zenklubTotalFaturado={zenklubTotalFaturado}
-                weekSessionsToReceive={weekSessionsToReceive}
-                weekSessionsTotal={weekSessionsTotal}
-                formatCurrency={formatCurrency}
-                zenklubSessionsForDetail={zenklubSessionsForDetail}
-                zenklubCyclePeriodLabel={zenklubCyclePeriodLabel}
-                selectedMonth={selectedMonth}
-                previousMonthName={previousMonthName}
-                salarioLiquidoPrevisto={salarioLiquidoPrevisto}
-                salarioLiquidoRecebido={salarioLiquidoRecebido}
-                salaryTotalRepasses={salaryTotalRepasses}
-                annualBruto={annualBruto}
-                annualLiquido={annualLiquido}
-                salaryMonth={salaryMonth}
-                selectedYear={selectedYear}
-                sessions={allSessions}
-                onSelectPatientByName={(name) => {
-                  const pat = patients.find(p => p.name === name);
-                  if (pat) {
-                    setSelectedPatientForDashboard(pat);
-                    setActiveTab('patients');
-                  }
-                }}
-              />
+              <div key="dashboard" className="tab-content-fade">
+                <DashboardTab
+                  hideValues={hideValues}
+                  totalMetrics={totalMetrics}
+                  rentTotalPaid={presencialTotalRentPaid}
+                  patients={patients}
+                  upcomingSessions={upcomingSessions}
+                  loadingUpcomingSessions={loadingUpcomingSessions}
+                  loadingSessions={loadingSessions}
+                  zenklubTotalFaturado={zenklubTotalFaturado}
+                  weekSessionsToReceive={weekSessionsToReceive}
+                  weekSessionsTotal={weekSessionsTotal}
+                  formatCurrency={formatCurrency}
+                  zenklubSessionsForDetail={zenklubSessionsForDetail}
+                  zenklubCyclePeriodLabel={zenklubCyclePeriodLabel}
+                  selectedMonth={selectedMonth}
+                  previousMonthName={previousMonthName}
+                  salarioLiquidoPrevisto={salarioLiquidoPrevisto}
+                  salarioLiquidoRecebido={salarioLiquidoRecebido}
+                  salaryTotalRepasses={salaryTotalRepasses}
+                  annualBruto={annualBruto}
+                  annualLiquido={annualLiquido}
+                  salaryMonth={salaryMonth}
+                  selectedYear={selectedYear}
+                  sessions={allSessions}
+                  onSelectPatientByName={(name) => {
+                    const pat = patients.find(p => p.name === name);
+                    if (pat) {
+                      setSelectedPatientForDashboard(pat);
+                      setActiveTab('patients');
+                    }
+                  }}
+                />
+              </div>
             )}
 
             {/* ABA 2: PACIENTES (CRUD) */}
             {activeTab === 'patients' && (
-              selectedPatientForDashboard ? (
-                <PatientDashboard
-                  hideValues={hideValues}
-                  selectedPatient={selectedPatientForDashboard}
-                  onBack={() => setSelectedPatientForDashboard(null)}
-                  patientDashboardSessions={patientDashboardSessions}
-                  loadingDashboardSessions={loadingDashboardSessions}
-                  handleQuickUpdatePatientStatus={handleQuickUpdatePatientStatus}
-                  generalPhoneText={generalPhoneText}
-                  setGeneralPhoneText={setGeneralPhoneText}
-                  generalEmailText={generalEmailText}
-                  setGeneralEmailText={setGeneralEmailText}
-                  generalDefaultRate={generalDefaultRate}
-                  setGeneralDefaultRate={setGeneralDefaultRate}
-                  generalNotesText={generalNotesText}
-                  setGeneralNotesText={setGeneralNotesText}
-                  generalOriginText={generalOriginText}
-                  setGeneralOriginText={setGeneralOriginText}
-                  handleSaveGeneralPatientDetails={handleSaveGeneralPatientDetails}
-                  savingNotes={savingNotes}
-                  handleOpenSessionModal={handleOpenSessionModal}
-                  handleDeleteSession={handleDeleteSession}
-                  formatCurrency={formatCurrency}
-                  handleUpdatePatientReadjustments={handleUpdatePatientReadjustments}
-                  handleToggleSessionPaymentStatus={handleToggleSessionPaymentStatus}
-                  handleToggleSessionCancellation={handleToggleSessionCancellation}
-                  handleToggleSessionCharge={handleToggleSessionCharge}
-                  handleUpdateSessionValue={handleUpdateSessionValue}
-                  handleUpdateSessionNotes={handleUpdateSessionNotes}
-                  handleUpdateSessionDate={handleUpdateSessionDate}
-                  handleUpdateSessionModality={handleUpdateSessionModality}
-                  handleUpdateSessionPatientType={handleUpdateSessionPatientType}
-                  showConfirm={showConfirm}
-                />
-              ) : (
-                <PatientsTab
-                  hideValues={hideValues}
-                  patients={patients}
-                  loadingPatients={loadingPatients}
-                  patientStatusFilterTab={patientStatusFilterTab}
-                  setPatientStatusFilterTab={setPatientStatusFilterTab}
-                  onSelectPatient={setSelectedPatientForDashboard}
-                  onEditPatient={handleOpenPatientModal}
-                  onDeletePatient={handleDeletePatient}
-                  onAddPatient={() => handleOpenPatientModal()}
-                  formatCurrency={formatCurrency}
-                />
-              )
+              <div key="patients" className="tab-content-fade">
+                {selectedPatientForDashboard ? (
+                  <PatientDashboard
+                    hideValues={hideValues}
+                    selectedPatient={selectedPatientForDashboard}
+                    onBack={() => setSelectedPatientForDashboard(null)}
+                    patientDashboardSessions={patientDashboardSessions}
+                    loadingDashboardSessions={loadingDashboardSessions}
+                    handleQuickUpdatePatientStatus={handleQuickUpdatePatientStatus}
+                    generalPhoneText={generalPhoneText}
+                    setGeneralPhoneText={setGeneralPhoneText}
+                    generalEmailText={generalEmailText}
+                    setGeneralEmailText={setGeneralEmailText}
+                    generalDefaultRate={generalDefaultRate}
+                    setGeneralDefaultRate={setGeneralDefaultRate}
+                    generalNotesText={generalNotesText}
+                    setGeneralNotesText={setGeneralNotesText}
+                    generalOriginText={generalOriginText}
+                    setGeneralOriginText={setGeneralOriginText}
+                    handleSaveGeneralPatientDetails={handleSaveGeneralPatientDetails}
+                    handleSavePatientFicha={handleSavePatientFicha}
+                    savingNotes={savingNotes}
+                    handleOpenSessionModal={handleOpenSessionModal}
+                    handleDeleteSession={handleDeleteSession}
+                    formatCurrency={formatCurrency}
+                    handleUpdatePatientReadjustments={handleUpdatePatientReadjustments}
+                    handleUpdatePatientSupervisions={handleUpdatePatientSupervisions}
+                    handleToggleSessionPaymentStatus={handleToggleSessionPaymentStatus}
+                    handleToggleSessionCancellation={handleToggleSessionCancellation}
+                    handleToggleSessionCharge={handleToggleSessionCharge}
+                    handleUpdateSessionValue={handleUpdateSessionValue}
+                    handleUpdateSessionNotes={handleUpdateSessionNotes}
+                    handleUpdateSessionDate={handleUpdateSessionDate}
+                    handleUpdateSessionModality={handleUpdateSessionModality}
+                    handleUpdateSessionPatientType={handleUpdateSessionPatientType}
+                    showConfirm={showConfirm}
+                  />
+                ) : (
+                  <PatientsTab
+                    hideValues={hideValues}
+                    patients={patients}
+                    loadingPatients={loadingPatients}
+                    patientStatusFilterTab={patientStatusFilterTab}
+                    setPatientStatusFilterTab={setPatientStatusFilterTab}
+                    onSelectPatient={setSelectedPatientForDashboard}
+                    onEditPatient={handleOpenPatientModal}
+                    onDeletePatient={handleDeletePatient}
+                    onAddPatient={() => handleOpenPatientModal()}
+                    formatCurrency={formatCurrency}
+                  />
+                )}
+              </div>
             )}
 
             {/* ABA 3: REPASSES & SUPERVISÃO */}
             {activeTab === 'transfers' && (
-              <TransfersTab
-                hideValues={hideValues}
-                selectedMonth={selectedMonth}
-                integrandoTotalRepasse={integrandoTotalRepasse}
-                integrandoTotalSessions={integrandoTotalSessions}
-                integrandoTotalGross={integrandoTotalGross}
-                integrandoRows={integrandoRows}
-                presencialTotalRent={presencialTotalRent}
-                presencialTotalSessions={presencialTotalSessions}
-                presencialTotalNet={presencialTotalNet}
-                presencialRows={presencialRows}
-                privateRows={privateRows}
-                privateTotalSessions={privateTotalSessions}
-                privateTotalSupervision={privateTotalSupervision}
-                privateTotalNet={privateTotalNet}
-                numSupervisions={numSupervisions}
-                setNumSupervisions={setNumSupervisions}
-                costPerSupervision={costPerSupervision}
-                setSessionCostPerSupervision={setCostPerSupervision}
-                supervisionTarget={supervisionTarget}
-                privateActivePatientsCount={privateActivePatients.length}
-                privateSessionsCount={privateSessionsCount}
-                suggestedSavePerSession={suggestedSavePerSession}
-                suggestedSavePerPatientMonthly={suggestedSavePerPatientMonthly}
-                suggestedSavePerSessionAssumingFour={suggestedSavePerSessionAssumingFour}
-                formatCurrency={formatCurrency}
-                onToggleRentCancelled={handleToggleSessionRentCancelled}
-                onToggleRentPaid={handleToggleSessionRentPaid}
-              />
+              <div key="transfers" className="tab-content-fade">
+                <TransfersTab
+                  hideValues={hideValues}
+                  selectedMonth={selectedMonth}
+                  integrandoTotalRepasse={integrandoTotalRepasse}
+                  integrandoTotalSessions={integrandoTotalSessions}
+                  integrandoTotalGross={integrandoTotalGross}
+                  integrandoRows={integrandoRows}
+                  presencialTotalRent={presencialTotalRent}
+                  presencialTotalSessions={presencialTotalSessions}
+                  presencialTotalNet={presencialTotalNet}
+                  presencialRows={presencialRows}
+                  privateRows={privateRows}
+                  privateTotalSessions={privateTotalSessions}
+                  privateTotalSupervision={privateTotalSupervision}
+                  privateTotalNet={privateTotalNet}
+                  numSupervisions={numSupervisions}
+                  setNumSupervisions={setNumSupervisions}
+                  costPerSupervision={costPerSupervision}
+                  setSessionCostPerSupervision={setCostPerSupervision}
+                  supervisionTarget={supervisionTarget}
+                  privateActivePatientsCount={privateActivePatients.length}
+                  privateSessionsCount={privateSessionsCount}
+                  suggestedSavePerSession={suggestedSavePerSession}
+                  suggestedSavePerPatientMonthly={suggestedSavePerPatientMonthly}
+                  suggestedSavePerSessionAssumingFour={suggestedSavePerSessionAssumingFour}
+                  formatCurrency={formatCurrency}
+                  onToggleRentCancelled={handleToggleSessionRentCancelled}
+                  onToggleRentPaid={handleToggleSessionRentPaid}
+                  supervisionWeeks={supervisionWeeks}
+                  onToggleSupervisionPaid={handleToggleSupervisionPaid}
+                  onToggleSupervisionCancelled={handleToggleSupervisionCancelled}
+                />
+              </div>
             )}
       </div>
 
@@ -1796,6 +2068,14 @@ export default function App() {
         onConfirm={confirmModal.onConfirm}
         onCancel={confirmModal.onCancel || (() => setConfirmModal(prev => ({ ...prev, isOpen: false })))}
       />
+
+      {/* Toast flutuante de sucesso */}
+      {toastMessage && (
+        <div className="toast-notification">
+          <span>✅</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
