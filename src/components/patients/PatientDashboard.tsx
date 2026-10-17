@@ -88,6 +88,9 @@ export function PatientDashboard({
   const [tempSessionPatientType, setTempSessionPatientType] = useState<string>('');
   const [expandedNotesSessionId, setExpandedNotesSessionId] = useState<string | null>(null);
   const [tempNotesText, setTempNotesText] = useState<string>('');
+  const [savingSessionNotes, setSavingSessionNotes] = useState(false);
+  const [savingReadjustment, setSavingReadjustment] = useState(false);
+  const [savingSupervision, setSavingSupervision] = useState(false);
 
   const [sessionFilter, setSessionFilter] = useState<'all' | 'notes' | 'cancelled'>('all');
 
@@ -145,11 +148,14 @@ export function PatientDashboard({
   const handleAddSupervision = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!newSupervisionDate) {
-      showConfirm("Por favor, selecione a data da supervisão.", () => {}, { isAlert: true, title: 'Aviso' });
+    if (!newSupervisionDate || savingSupervision) {
+      if (!newSupervisionDate) {
+        showConfirm("Por favor, selecione a data da supervisão.", () => {}, { isAlert: true, title: 'Aviso' });
+      }
       return;
     }
 
+    setSavingSupervision(true);
     const newEntry: PatientSupervision = {
       id: Date.now().toString(),
       date: newSupervisionDate
@@ -162,6 +168,8 @@ export function PatientDashboard({
       showConfirm("Supervisão adicionada com sucesso!", () => {}, { isAlert: true, title: 'Sucesso' });
     } catch {
       // erro tratado no pai
+    } finally {
+      setSavingSupervision(false);
     }
   };
 
@@ -181,11 +189,14 @@ export function PatientDashboard({
 
   const handleAddReadjustment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReadjustmentDate || !newReadjustmentValue) {
-      showConfirm("Por favor, preencha a data e o valor do reajuste.", () => {}, { isAlert: true, title: 'Aviso' });
+    if (!newReadjustmentDate || !newReadjustmentValue || savingReadjustment) {
+      if (!newReadjustmentDate || !newReadjustmentValue) {
+        showConfirm("Por favor, preencha a data e o valor do reajuste.", () => {}, { isAlert: true, title: 'Aviso' });
+      }
       return;
     }
 
+    setSavingReadjustment(true);
     const newReadjustment: RateReadjustment = {
       id: Date.now().toString(),
       date: newReadjustmentDate,
@@ -200,6 +211,8 @@ export function PatientDashboard({
       showConfirm("Reajuste adicionado com sucesso!", () => {}, { isAlert: true, title: 'Sucesso' });
     } catch {
       // erro tratado no pai
+    } finally {
+      setSavingReadjustment(false);
     }
   };
 
@@ -366,7 +379,7 @@ export function PatientDashboard({
                         onChange={(e) => setTempSessionModality(e.target.value)}
                         style={{
                           fontSize: '0.75rem',
-                          padding: '0.1rem 0.25rem',
+                          padding: '0.1rem 1.4rem 0.1rem 0.35rem',
                           border: '1px solid var(--accent-primary)',
                           borderRadius: '4px',
                           background: 'var(--bg-main)',
@@ -440,7 +453,7 @@ export function PatientDashboard({
                         onChange={(e) => setTempSessionPatientType(e.target.value)}
                         style={{
                           fontSize: '0.7rem',
-                          padding: '0.1rem 0.25rem',
+                          padding: '0.1rem 1.4rem 0.1rem 0.35rem',
                           border: '1px solid var(--accent-primary)',
                           borderRadius: '4px',
                           background: 'var(--bg-main)',
@@ -784,22 +797,6 @@ export function PatientDashboard({
                         pkgInfo ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                             <span>📦 Pacote ({pkgInfo.current}/{pkgInfo.total})</span>
-                            {pkgInfo.isLast && (
-                              <span
-                                style={{
-                                  fontSize: '0.62rem',
-                                  background: 'var(--accent-warning)',
-                                  color: '#000',
-                                  padding: '0.05rem 0.25rem',
-                                  borderRadius: '4px',
-                                  fontWeight: '800',
-                                  marginLeft: '0.1rem'
-                                }}
-                                title="Última sessão do pacote! Momento de cobrar renovação."
-                              >
-                                Cobrar
-                              </span>
-                            )}
                           </span>
                         ) : '📦 Pacote'
                       ) : s.isPaid ? (
@@ -857,6 +854,7 @@ export function PatientDashboard({
                     <Button
                       variant="secondary"
                       onClick={() => setExpandedNotesSessionId(null)}
+                      disabled={savingSessionNotes}
                       style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
                     >
                       Fechar
@@ -864,14 +862,20 @@ export function PatientDashboard({
                     <Button
                       variant="success"
                       onClick={async () => {
-                        if (s.id) {
-                          await handleUpdateSessionNotes(s.id, tempNotesText);
-                          setExpandedNotesSessionId(null);
+                        if (s.id && !savingSessionNotes) {
+                          setSavingSessionNotes(true);
+                          try {
+                            await handleUpdateSessionNotes(s.id, tempNotesText);
+                            setExpandedNotesSessionId(null);
+                          } finally {
+                            setSavingSessionNotes(false);
+                          }
                         }
                       }}
+                      disabled={savingSessionNotes}
                       style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
                     >
-                      💾 Salvar Notas
+                      {savingSessionNotes ? 'Salvando...' : '💾 Salvar Notas'}
                     </Button>
                   </div>
                 </div>
@@ -920,34 +924,6 @@ export function PatientDashboard({
               <span style={{ background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                 📅 <strong>Total de Sessões:</strong> {patientDashboardSessions.filter(s => !s.isCancelled && s.date <= todayStr).length}
               </span>
-              {(() => {
-                const packageSize = selectedPatient.packageSize || 4;
-                const packageSessions = patientDashboardSessions.filter(
-                  s => s.isPackage && (!s.isCancelled || s.isCharged)
-                );
-                if (packageSessions.length === 0) return null;
-                const currentInCycle = (packageSessions.length % packageSize) === 0 ? packageSize : (packageSessions.length % packageSize);
-                const isCycleComplete = currentInCycle === packageSize;
-                return (
-                  <span
-                    style={{
-                      background: isCycleComplete ? 'rgba(245, 158, 11, 0.15)' : 'rgba(139, 92, 246, 0.15)',
-                      border: `1px solid ${isCycleComplete ? 'var(--accent-warning)' : '#8b5cf6'}`,
-                      padding: '0.25rem 0.6rem',
-                      borderRadius: '6px',
-                      fontSize: '0.75rem',
-                      color: isCycleComplete ? 'var(--accent-warning)' : '#a78bfa',
-                      fontWeight: 'bold',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.35rem'
-                    }}
-                    title={isCycleComplete ? "Pacote concluído! Hora de cobrar a renovação." : "Acompanhamento do ciclo atual de pacote"}
-                  >
-                    📦 Ciclo do Pacote: <strong>{currentInCycle} de {packageSize}</strong> {isCycleComplete ? '⚠️ (Renovar)' : 'em andamento'}
-                  </span>
-                );
-              })()}
             </div>
           </div>
         </div>
@@ -956,14 +932,22 @@ export function PatientDashboard({
           value={selectedPatient.status}
           onChange={(e) => handleQuickUpdatePatientStatus(e.target.value as any)}
           style={{
-            fontSize: '0.9rem',
-            padding: '0.4rem 2rem 0.4rem 1rem',
+            fontSize: '0.85rem',
+            padding: '0.45rem 2.6rem 0.45rem 1rem',
             cursor: 'pointer',
             border: '1px solid var(--border-color)',
             outline: 'none',
             textAlign: 'center',
             fontWeight: '600',
-            fontFamily: 'inherit'
+            fontFamily: 'inherit',
+            minWidth: '245px',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+            backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${selectedPatient.status === 'active' ? '%2310b981' : (selectedPatient.status === 'paused' ? '%23f59e0b' : '%23ef4444')}' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'calc(100% - 1.15rem) center',
+            backgroundSize: '1.05rem'
           }}
         >
           <option value="active" style={{ color: 'black' }}>🟢 Em Acompanhamento</option>
@@ -1180,22 +1164,6 @@ export function PatientDashboard({
                                   pkgInfo ? (
                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                                       <span>📦 Pacote ({pkgInfo.current}/{pkgInfo.total})</span>
-                                      {pkgInfo.isLast && (
-                                        <span
-                                          style={{
-                                            fontSize: '0.62rem',
-                                            background: 'var(--accent-warning)',
-                                            color: '#000',
-                                            padding: '0.05rem 0.25rem',
-                                            borderRadius: '4px',
-                                            fontWeight: '800',
-                                            marginLeft: '0.1rem'
-                                          }}
-                                          title="Última sessão do pacote! Momento de cobrar renovação."
-                                        >
-                                          Cobrar
-                                        </span>
-                                      )}
                                     </span>
                                   ) : '📦 Pacote'
                                 ) : s.isPaid ? (
@@ -1251,8 +1219,8 @@ export function PatientDashboard({
                   required
                 />
               </div>
-              <Button type="submit" variant="success" style={{ padding: '0.55rem 0.9rem' }}>
-                + Adicionar
+              <Button type="submit" variant="success" disabled={savingReadjustment} style={{ padding: '0.55rem 0.9rem' }}>
+                {savingReadjustment ? 'Adicionando...' : '+ Adicionar'}
               </Button>
             </form>
 
@@ -1412,8 +1380,8 @@ export function PatientDashboard({
                   required
                 />
               </div>
-              <Button type="submit" variant="success" style={{ padding: '0.55rem 0.9rem' }}>
-                + Adicionar
+              <Button type="submit" variant="success" disabled={savingSupervision} style={{ padding: '0.55rem 0.9rem' }}>
+                {savingSupervision ? 'Adicionando...' : '+ Adicionar'}
               </Button>
             </form>
 

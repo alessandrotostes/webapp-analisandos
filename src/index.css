@@ -276,7 +276,6 @@ body {
   letter-spacing: 0.05em;
 }
 
-.filter-select,
 .filter-input {
   background: var(--bg-main);
   border: 1px solid var(--border-color);
@@ -287,6 +286,31 @@ body {
   outline: none;
   transition: var(--transition-smooth);
   min-width: 160px;
+}
+
+.filter-select,
+select.filter-select {
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.55rem 2.4rem 0.55rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  outline: none;
+  transition: var(--transition-smooth);
+  min-width: 160px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: calc(100% - 0.85rem) center;
+  background-size: 1rem;
+}
+
+select {
+  cursor: pointer;
 }
 
 .filter-select:focus,

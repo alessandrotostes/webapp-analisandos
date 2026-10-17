@@ -375,6 +375,9 @@ export default function App() {
     isPackage: false
   });
 
+  const [savingPatient, setSavingPatient] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
+
   // States do Prontuário / Dashboard do Paciente
   const [selectedPatientForDashboard, setSelectedPatientForDashboard] = useState<Patient | null>(() => {
     const saved = localStorage.getItem('selected_patient_dashboard');
@@ -773,8 +776,9 @@ export default function App() {
 
   const handleSavePatient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patientForm.name) return;
+    if (!patientForm.name || savingPatient) return;
 
+    setSavingPatient(true);
     try {
       if (editingPatient?.id) {
         // Bug fix: se o nome mudou, propagar para sessões e faturas
@@ -792,10 +796,12 @@ export default function App() {
         await addPatient(patientForm as Patient);
       }
       setShowPatientModal(false);
-      loadPatientsData();
-      loadAllSessionsForSelectedMonth();
+      await loadPatientsData();
+      await loadAllSessionsForSelectedMonth();
     } catch (err: any) {
       setErrorMsg("Erro ao salvar analisando: " + err.message);
+    } finally {
+      setSavingPatient(false);
     }
   };
 
@@ -838,9 +844,7 @@ export default function App() {
       const activePatientsList = patients
         .filter(p => p.status === 'active')
         .sort((a, b) => a.name.localeCompare(b.name));
-      const firstPat = (selectedPatientForDashboard && selectedPatientForDashboard.status === 'active'
-        ? selectedPatientForDashboard
-        : null) || activePatientsList[0];
+      const firstPat = selectedPatientForDashboard || activePatientsList[0] || patients[0];
       setEditingSession(null);
       setSessionForm({
         patientName: firstPat?.name || '',
@@ -873,20 +877,29 @@ export default function App() {
 
   const handleSaveSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionForm.patientName) return;
+    if (!sessionForm.patientName || savingSession) return;
 
+    setSavingSession(true);
     try {
+      // Cria payload limpo sem chaves undefined que o Firestore não aceita
+      const payload: Record<string, any> = {};
+      Object.entries(sessionForm).forEach(([key, val]) => {
+        if (val !== undefined) {
+          payload[key] = val;
+        }
+      });
+
       if (editingSession?.id) {
         // EDIÇÃO: atualiza no Firestore e sincroniza com Google Calendar
-        await updateSession(editingSession.id, sessionForm as Session);
+        await updateSession(editingSession.id, payload as Partial<Session>);
 
         // Se a sessão tem um eventId vinculado, atualiza o evento no Google
         if (googleAccessToken && editingSession.googleEventId) {
-          await updateGoogleCalendarEvent(editingSession.googleEventId, sessionForm as Session);
+          await updateGoogleCalendarEvent(editingSession.googleEventId, payload as Session);
         }
       } else {
         // CRIAÇÃO: salva no Firestore e cria evento no Google Calendar
-        const newSessionData = sessionForm as Session;
+        const newSessionData = payload as Session;
         const firestoreId = await addSession(newSessionData);
 
         if (googleAccessToken) {
@@ -898,13 +911,15 @@ export default function App() {
         }
       }
       setShowSessionModal(false);
-      loadAllSessionsForSelectedMonth();
-      loadUpcomingSessionsData();
+      await loadAllSessionsForSelectedMonth();
+      await loadUpcomingSessionsData();
       if (selectedPatientForDashboard) {
-        loadPatientDashboardSessions(selectedPatientForDashboard.name);
+        await loadPatientDashboardSessions(selectedPatientForDashboard.name);
       }
     } catch (err: any) {
       setErrorMsg("Erro ao salvar sessão: " + err.message);
+    } finally {
+      setSavingSession(false);
     }
   };
 
@@ -1766,7 +1781,7 @@ export default function App() {
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.5rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'white', marginRight: '0.25rem' }}>Período:</span>
-                <select className="filter-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ minWidth: '90px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
+                <select className="filter-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ minWidth: '95px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem 1.5rem 0.25rem 0.4rem', cursor: 'pointer', outline: 'none' }}>
                   {(() => {
                     const currentYear = Math.max(new Date().getFullYear(), 2026);
                     const startYear = 2025;
@@ -1780,7 +1795,7 @@ export default function App() {
                     ));
                   })()}
                 </select>
-                <select className="filter-select" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ minWidth: '120px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem', cursor: 'pointer', outline: 'none' }}>
+                <select className="filter-select" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} style={{ minWidth: '125px', background: 'transparent', border: 'none', color: 'white', padding: '0.25rem 1.6rem 0.25rem 0.4rem', cursor: 'pointer', outline: 'none' }}>
                   <option value="" style={{ color: 'black' }}>Ano Inteiro</option>
                   <option value="JANEIRO" style={{ color: 'black' }}>Janeiro</option>
                   <option value="FEVEREIRO" style={{ color: 'black' }}>Fevereiro</option>
@@ -1823,7 +1838,6 @@ export default function App() {
                 title={hideValues ? "Exibir valores financeiros" : "Ocultar valores financeiros"}
               >
                 {hideValues ? <Eye size={14} /> : <EyeOff size={14} />}
-                {hideValues ? 'Exibir Valores' : ''}
               </button>
               {user && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.75rem 0.25rem 0.25rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -2045,6 +2059,7 @@ export default function App() {
         patientForm={patientForm}
         setPatientForm={setPatientForm as any}
         isEditing={!!editingPatient}
+        isSaving={savingPatient}
       />
 
       <SessionModal
@@ -2056,6 +2071,7 @@ export default function App() {
         patients={patients}
         isEditing={!!editingSession}
         onPatientChange={handleSessionPatientChange}
+        isSaving={savingSession}
       />
 
       <ConfirmModal

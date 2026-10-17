@@ -11,7 +11,8 @@ import {
   orderBy,
   limit,
   writeBatch,
-  startAfter
+  startAfter,
+  deleteField
 } from 'firebase/firestore';
 import type {
   DocumentData,
@@ -19,6 +20,22 @@ import type {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase-config';
 import type { RentLog, Session, Patient } from '../../types';
+
+// Helper para remover campos com valor undefined (que o Firestore rejeita com erro)
+function sanitizeForFirestore<T extends Record<string, any>>(obj: T, forUpdate = false): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val === undefined) {
+      if (forUpdate) {
+        result[key] = deleteField();
+      }
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
+}
 
 // ==========================================
 // SERVIÇO GERAL DE SEED (CARGA INICIAL)
@@ -75,13 +92,15 @@ export async function getPatients(): Promise<Patient[]> {
 
 export async function addPatient(patient: Patient): Promise<string> {
   const patientsRef = collection(db, 'patients');
-  const docRef = await addDoc(patientsRef, patient);
+  const sanitized = sanitizeForFirestore(patient, false);
+  const docRef = await addDoc(patientsRef, sanitized);
   return docRef.id;
 }
 
 export async function updatePatient(id: string, updates: Partial<Patient>): Promise<void> {
   const docRef = doc(db, 'patients', id);
-  await updateDoc(docRef, updates as DocumentData);
+  const sanitized = sanitizeForFirestore(updates, true);
+  await updateDoc(docRef, sanitized as DocumentData);
 }
 
 export async function deletePatient(id: string): Promise<void> {
@@ -188,13 +207,15 @@ export async function getSessions({
 
 export async function addSession(session: Session): Promise<string> {
   const sessionsRef = collection(db, 'sessions');
-  const docRef = await addDoc(sessionsRef, session);
+  const sanitized = sanitizeForFirestore(session, false);
+  const docRef = await addDoc(sessionsRef, sanitized);
   return docRef.id;
 }
 
 export async function updateSession(id: string, updates: Partial<Session>): Promise<void> {
   const docRef = doc(db, 'sessions', id);
-  await updateDoc(docRef, updates as DocumentData);
+  const sanitized = sanitizeForFirestore(updates, true);
+  await updateDoc(docRef, sanitized as DocumentData);
 }
 
 export async function deleteSession(id: string): Promise<void> {

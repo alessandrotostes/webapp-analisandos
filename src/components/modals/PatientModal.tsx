@@ -9,6 +9,7 @@ interface PatientModalProps {
   patientForm: Partial<Patient>;
   setPatientForm: React.Dispatch<React.SetStateAction<Partial<Patient>>>;
   isEditing: boolean;
+  isSaving?: boolean;
 }
 
 export function PatientModal({
@@ -17,7 +18,8 @@ export function PatientModal({
   onSubmit,
   patientForm,
   setPatientForm,
-  isEditing
+  isEditing,
+  isSaving = false
 }: PatientModalProps) {
   if (!isOpen) return null;
 
@@ -146,11 +148,11 @@ export function PatientModal({
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary">
-            Salvar Analisando
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {isSaving ? 'Salvando...' : 'Salvar Analisando'}
           </Button>
         </div>
       </form>

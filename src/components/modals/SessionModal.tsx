@@ -11,6 +11,7 @@ interface SessionModalProps {
   patients: Patient[];
   isEditing: boolean;
   onPatientChange: (name: string) => void;
+  isSaving?: boolean;
 }
 
 export function SessionModal({
@@ -21,7 +22,8 @@ export function SessionModal({
   setSessionForm,
   patients,
   isEditing,
-  onPatientChange
+  onPatientChange,
+  isSaving = false
 }: SessionModalProps) {
   if (!isOpen) return null;
 
@@ -240,11 +242,11 @@ export function SessionModal({
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" variant="success">
-            Salvar Atendimento
+          <Button type="submit" variant="success" disabled={isSaving}>
+            {isSaving ? 'Salvando...' : 'Salvar Atendimento'}
           </Button>
         </div>
       </form>
